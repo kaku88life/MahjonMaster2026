@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣麻將馬上通 - Taiwanese Mahjong Strategy</title>
+    <link rel="stylesheet" href="css/clay-theme.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700&family=Noto+Serif+TC:wght@400;700&family=Roboto:wght@400;500&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
+
+    <div class="app-container">
+        <header>
+            <div class="logo-container" style="display:flex; flex-direction:column; align-items:center;">
+                <h1>台灣麻將<span style="color:var(--accent-color)">馬</span>上通</h1>
+                <p>Taiwanese Mahjong Strategy & Scoring</p>
+            </div>
+        </header>
+
+        <main>
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="practice">實戰練習</button>
+                <button class="tab-btn" data-tab="patterns">牌型範例</button>
+                <button class="tab-btn" data-tab="strategy">策略指南</button>
+            </div>
+
+            <!-- TAB 1: Mahjong Game -->
+            <div id="tab-practice" class="tab-content active">
+
+                <!-- Game Table -->
+                <div class="game-table" id="game-table">
+                    <!-- Top Player (對家 C) -->
+                    <div class="player-area top-player">
+                        <div class="player-label top-label">🅒 對家 <span id="player-wind-2" class="wind-badge"></span>
+                        </div>
+                        <div class="hand-back horizontal" id="hand-top"></div>
+                        <div class="opponent-flowers horizontal-flowers" id="flowers-top"></div>
+                    </div>
+
+                    <div class="mahjong-table-container">
+                        <!-- Left Player (上家 B) -->
+                        <div class="player-area left-player">
+                            <div class="player-label side-label">🅑<br>上家<br><span id="player-wind-3"
+                                    class="wind-badge"></span></div>
+                            <div class="hand-back vertical" id="hand-left"></div>
+                            <div class="opponent-flowers vertical-flowers" id="flowers-left"></div>
+                        </div>
+
+                        <!-- Right Player (下家 A) -->
+                        <div class="player-area right-player">
+                            <div class="player-label side-label">🅐<br>下家<br><span id="player-wind-1"
+                                    class="wind-badge"></span></div>
+                            <div class="hand-back vertical" id="hand-right"></div>
+                            <div class="opponent-flowers vertical-flowers" id="flowers-right"></div>
+                        </div>
+
+                        <!-- Center Discard Pile -->
+                        <div class="center-discard-pile" id="center-discard-pile"></div>
+
+                        <!-- Dice Display (center, during dealing) -->
+                        <div class="dice-display" id="dice-display"></div>
+
+                        <!-- Tile Wall (clickable for drawing) -->
+                        <div class="tile-wall" id="tile-wall">
+                            <div class="wall-count">-- 張</div>
+                        </div>
+
+                        <!-- Info Panel (top-right corner, simplified) -->
+                        <div class="info-panel" id="info-panel">
+                            <div class="round-display" id="round-display">東風圈</div>
+                            <div class="turn-indicator" id="turn-indicator">等待開始...</div>
+                            <div class="remain-count">剩餘: <span id="remain-count">--</span></div>
+                            <div class="stats-display" id="player-stats"
+                                style="margin-top: 8px; font-size: 0.8rem; color: #A7F3D0; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 4px; display: none;">
+                                平均思考: <span id="avg-think-time">0.0</span>s
+                            </div>
+                        </div>
+
+                        <!-- Bottom Player (自己) -->
+                        <div class="player-area bottom-player">
+                            <div class="hand-display" id="hand-display">
+                                <div class="empty-slot-placeholder">按「開始新局」開始打牌！</div>
+                            </div>
+                            <div class="player-footer" style="display: flex; align-items: center; gap: 12px;">
+                                <div class="player-label bottom-label">自己 <span id="player-wind-0"
+                                        class="wind-badge">東</span></div>
+                                <div class="flower-display-area" id="flower-display"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Toast Container (custom in-page notifications) -->
+                <div class="toast-container" id="toast-container"></div>
+
+                <!-- Action Bar (Chi / Pong / Hu / Pass) -->
+                <div class="action-bar hidden" id="action-bar">
+                    <div class="action-prompt" id="action-prompt">對手出牌了！</div>
+                    <div class="action-buttons">
+                        <button id="btn-chi" class="btn action-btn chi-btn" disabled>吃 (Chi)</button>
+                        <button id="btn-pong" class="btn action-btn pong-btn" disabled>碰 (Pong)</button>
+                        <button id="btn-hu" class="btn action-btn hu-btn">胡 (Hu)</button>
+                        <button id="btn-pass" class="btn action-btn pass-btn">跳過 (Pass)</button>
+                    </div>
+                </div>
+
+                <!-- Rule Message -->
+                <div class="rule-message hidden" id="rule-message"></div>
+
+                <!-- Controls Bar (below table) -->
+                <div class="game-controls-bar">
+                    <button id="deal-btn" class="btn primary">開始新局</button>
+                    <button id="sort-btn" class="btn secondary">理牌</button>
+                    <button id="hu-self-btn" class="btn hu-self-btn" style="display:none;">自摸胡</button>
+                    <button id="settings-btn" class="btn settings-btn">⚙ 設定</button>
+                    <div class="speed-selector">
+                        <label>AI 速度：</label>
+                        <select id="ai-speed">
+                            <option value="3000">快 (3秒)</option>
+                            <option value="5000" selected>中 (5秒)</option>
+                            <option value="8000">慢 (8秒)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Scoreboard (below controls) -->
+                <div class="scoreboard" id="scoreboard">
+                    <div class="scoreboard-row scores-row">
+                        <div class="score-cell" data-player="0">
+                            <span class="score-name">自己</span>
+                            <span class="score-value" id="score-0">0</span>
+                        </div>
+                        <div class="score-cell" data-player="1">
+                            <span class="score-name">🅐 下家</span>
+                            <span class="score-value" id="score-1">0</span>
+                        </div>
+                        <div class="score-cell" data-player="2">
+                            <span class="score-name">🅒 對家</span>
+                            <span class="score-value" id="score-2">0</span>
+                        </div>
+                        <div class="score-cell" data-player="3">
+                            <span class="score-name">🅑 上家</span>
+                            <span class="score-value" id="score-3">0</span>
+                        </div>
+                    </div>
+                    <div class="scoreboard-row stats-row">
+                        <div class="stat-cell" id="stat-0">胡:0 自摸:0 放槍:0</div>
+                        <div class="stat-cell" id="stat-1">胡:0 自摸:0 放槍:0</div>
+                        <div class="stat-cell" id="stat-2">胡:0 自摸:0 放槍:0</div>
+                        <div class="stat-cell" id="stat-3">胡:0 自摸:0 放槍:0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: Patterns -->
+            <div id="tab-patterns" class="tab-content">
+                <h2>麻將牌一覽</h2>
+                <div id="tile-overview" class="tile-overview"></div>
+                <hr style="margin: 30px 0; border: 0; border-top: 2px dashed #A7F3D0;">
+                <h2>常見牌型範例 (Patterns)</h2>
+                <div id="patterns-container"></div>
+            </div>
+
+            <!-- TAB 3: Strategy -->
+            <div id="tab-strategy" class="tab-content">
+                <section class="strategy-guide">
+                    <h2>麻將實戰策略</h2>
+                    <div class="strategy-card">
+                        <h3>1. 進牌效率</h3>
+                        <ul>
+                            <li><strong>聽牌要聽得漂亮</strong>：盡量湊成兩面聽（如 23 萬聽 14 萬）。</li>
+                            <li><strong>孤張處理順序</strong>：先打字牌，再打一九牌，保留中張牌（3-7）。</li>
+                        </ul>
+                    </div>
+                    <div class="strategy-card">
+                        <h3>2. 守牌技巧</h3>
+                        <ul>
+                            <li><strong>打熟張</strong>：別人打過的牌通常比較安全。</li>
+                            <li><strong>壁牌效應</strong>：手握三張暗刻，該牌的鄰居比較安全。</li>
+                        </ul>
+                    </div>
+                    <div class="strategy-card">
+                        <h3>3. 攻守判斷</h3>
+                        <ul>
+                            <li>台數多值得衝張，屁胡就果斷下車。</li>
+                        </ul>
+                    </div>
+                    <hr style="margin: 30px 0; border: 0; border-top: 2px dashed #A7F3D0;">
+                    <h2>麻將術語小百科</h2>
+                    <div class="strategy-card">
+                        <h3>相公</h3>
+                        <p>手牌數量不對，一旦相公就不能胡牌。</p>
+                    </div>
+                    <div class="strategy-card">
+                        <h3>莊家與連莊</h3>
+                        <p>莊家胡牌或流局可連莊。連 N 拉 N（連一拉一 = +2台）。</p>
+                    </div>
+                    <div class="strategy-card">
+                        <h3>過水</h3>
+                        <p>選擇不胡可以胡的牌。過水後過一手前不能胡同張牌。</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <footer>
+            <p>© 2026 台灣麻將<span style="color:var(--accent-color)">馬</span>上通</p>
+        </footer>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay hidden" id="settings-modal">
+        <div class="modal-content settings-content">
+            <h3>遊戲設定</h3>
+            <div class="setting-row">
+                <label>底 (元)</label>
+                <input type="number" id="setting-base" value="100" min="10" step="10">
+            </div>
+            <div class="setting-row">
+                <label>電腦難度</label>
+                <select id="setting-difficulty">
+                    <option value="easy">簡易 (隨機出牌)</option>
+                    <option value="normal" selected>普通 (平衡策略)</option>
+                    <option value="hard">困難 (積極進攻)</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label>每台 (元)</label>
+                <input type="number" id="setting-per-tai" value="100" min="10" step="10">
+            </div>
+            <div class="modal-actions">
+                <button class="btn primary" id="settings-save">儲存</button>
+                <button class="btn secondary" id="settings-cancel">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Win Declaration Modal -->
+    <div class="modal-overlay hidden" id="win-modal">
+        <div class="modal-content win-content">
+            <h3>宣告胡牌</h3>
+            <div class="win-type-selector">
+                <button class="btn win-type-btn active" data-type="zimo" id="win-type-zimo">自摸</button>
+                <button class="btn win-type-btn" data-type="hu" id="win-type-hu">胡牌（放槍）</button>
+            </div>
+            <div class="setting-row">
+                <label>台數</label>
+                <input type="number" id="win-tai-count" value="1" min="0" max="20" step="1">
+            </div>
+            <div class="win-preview">
+                <span>預計得分：</span>
+                <strong id="win-preview-amount">+200</strong>
+            </div>
+            <div class="modal-actions">
+                <button class="btn primary" id="win-confirm">確定宣告</button>
+                <button class="btn secondary" id="win-cancel">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drawn Tile Preview Overlay -->
+    <div id="drawn-tile-preview" class="drawn-tile-preview hidden">
+        <div class="preview-content">
+            <div id="preview-tile-container" class="preview-tile-container"></div>
+            <div class="preview-actions">
+                <button class="btn primary" id="btn-keep-preview">收入手牌</button>
+                <button class="btn secondary" id="btn-discard-preview">直接打出</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div id="win-modal" class="modal">
+        <div class="modal-content win-panel">
+            <h2 id="win-title">🎉 胡牌！</h2>
+            <div id="win-winner" class="win-winner-name"></div>
+
+            <div class="win-section-title">手牌</div>
+            <div id="win-hand" class="win-hand-display"></div>
+
+            <div class="win-section-title">台數計算</div>
+            <div id="win-details" class="win-details-list"></div>
+
+            <div id="win-total" class="win-total-score"></div>
+
+            <div class="modal-actions">
+                <button id="win-confirm-btn" class="clay-btn primary">結算 & 下一局</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/mahjong-algorithm.js"></script>
+    <script src="js/mahjong-strategies.js"></script>
+    <script src="js/mahjong-algorithm.js"></script>
+    <script src="js/audio-manager.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>

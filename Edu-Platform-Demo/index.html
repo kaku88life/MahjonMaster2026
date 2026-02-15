@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JoyLearn - Playful Education</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+
+    <!-- Navigation -->
+    <nav class="clay-nav">
+        <div class="logo">Joy<span class="highlight">Learn</span></div>
+        <div class="nav-links">
+            <a href="#courses" class="nav-item">Courses</a>
+            <a href="#progress" class="nav-item">Progress</a>
+            <a href="#testimonials" class="nav-item">Stories</a>
+        </div>
+        <button class="btn-primary clay-btn">Get Started</button>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-content">
+            <h1 class="clay-text">Learning made <br><span class="highlight-text">Fun & Squishy!</span></h1>
+            <p>Master UI/UX, Coding, and more in a world tailored for your brain's happiness.</p>
+            <div class="hero-btns">
+                <button class="btn-primary clay-btn big">Start Learning</button>
+                <button class="btn-secondary clay-btn big">View Catalog</button>
+            </div>
+        </div>
+        <div class="hero-visuals">
+            <div class="parallax-wrapper" data-speed="1">
+                <div class="floating-shape shape-1 clay-shape"></div>
+            </div>
+            <div class="parallax-wrapper" data-speed="2">
+                <div class="floating-shape shape-2 clay-shape">VP</div>
+            </div>
+            <div class="parallax-wrapper" data-speed="1.5">
+                <div class="floating-shape shape-3 clay-shape">
+                    <i class="fas fa-rocket"></i>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Course Catalog -->
+    <section id="courses" class="courses-section">
+        <h2 class="section-title">Explore Courses</h2>
+        <div class="course-grid">
+            <!-- Card 1 -->
+            <div class="course-card clay-card">
+                <div class="card-icon icon-purple"><i class="fas fa-paint-brush"></i></div>
+                <h3>UI Design Master</h3>
+                <p>Learn to design beautiful interfaces with claymorphism.</p>
+                <div class="progress-preview">
+                    <span>12 Lessons</span>
+                    <div class="mini-bar">
+                        <div class="fill" style="width: 60%"></div>
+                    </div>
+                </div>
+                <button class="btn-sm clay-btn">Join Course</button>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="course-card clay-card">
+                <div class="card-icon icon-blue"><i class="fas fa-code"></i></div>
+                <h3>Web Development</h3>
+                <p>Build responsive websites from scratch using HTML & CSS.</p>
+                <div class="progress-preview">
+                    <span>24 Lessons</span>
+                    <div class="mini-bar">
+                        <div class="fill" style="width: 30%"></div>
+                    </div>
+                </div>
+                <button class="btn-sm clay-btn">Join Course</button>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="course-card clay-card">
+                <div class="card-icon icon-pink"><i class="fas fa-chart-line"></i></div>
+                <h3>Marketing 101</h3>
+                <p>Grow your audience with proven strategies.</p>
+                <div class="progress-preview">
+                    <span>8 Lessons</span>
+                    <div class="mini-bar">
+                        <div class="fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <button class="btn-sm clay-btn">Join Course</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Progress Tracking Demo -->
+    <section id="progress" class="progress-section">
+        <div class="progress-container clay-card large">
+            <div class="profile-header">
+                <div class="avatar clay-shape">Amy</div>
+                <div class="profile-info">
+                    <h3>Your Journey</h3>
+                    <p>Keep up the great work, Amy!</p>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="circle-chart" data-percent="75">
+                        <svg viewBox="0 0 36 36" class="circular-chart orange">
+                            <path class="circle-bg"
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path class="circle" stroke-dasharray="75, 100"
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="percentage">75%</div>
+                    </div>
+                    <span>Course Comp.</span>
+                </div>
+                <div class="stat-item">
+                    <h4 class="clay-number">12</h4>
+                    <span>Hours Spent</span>
+                </div>
+                <div class="stat-item">
+                    <h4 class="clay-number">850</h4>
+                    <span>XP Points</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section id="testimonials" class="testimonials-section">
+        <h2 class="section-title">Happy Students</h2>
+        <div class="testimonial-slider">
+            <div class="testimonial-card clay-card active">
+                <p>"The claymorphism design makes learning feel like playing a game. I love it!"</p>
+                <div class="user">
+                    <div class="user-avatar clay-shape purple">J</div>
+                    <span>Jessica M.</span>
+                </div>
+            </div>
+            <!-- More added via JS if needed, or static for demo -->
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <footer class="cta-section">
+        <div class="cta-card clay-card glass">
+            <h2>Ready to start?</h2>
+            <p>Join 10,000+ students today.</p>
+            <form class="signup-form">
+                <input type="email" placeholder="Enter your email" class="clay-input">
+                <button type="submit" class="btn-primary clay-btn">Sign Up Free</button>
+            </form>
+        </div>
+    </footer>
+
+    <script src="js/script.js"></script>
+</body>
+
+</html>
