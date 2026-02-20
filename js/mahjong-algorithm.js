@@ -121,18 +121,59 @@ const MahjongAlgorithm = {
     // hand: Array of tiles (including winning tile)
     // openMelds: Array of melds [{type: 'pong', tile: '1m'}, ...]
     // flowers: Array of flower tiles
-    // context: { roundWind: 'dong', seatWind: 'nan', isSelfDraw: boolean }
+    // context: { roundWind: 'dong', seatWind: 'nan', isSelfDraw: boolean,
+    //            lianZhuang: number, isDealer: boolean }
     calculateScore(hand, openMelds, flowers, context) {
         const details = [];
         let totalTai = 0;
 
-        // 1. Flowers
+        // 1. Flowers (花牌計算)
+        // Each flower = 1 台 (base)
         const flowerCount = flowers.length;
         if (flowerCount > 0) {
             details.push({ name: `花牌 x${flowerCount}`, tai: flowerCount });
             totalTai += flowerCount;
         }
-        // Check "Complete Flower Set" (Season/Plant) - Advanced, skipped for now
+
+        // 1b. 正花 (Matching flower to seat wind)
+        // 東=1, 南=2, 西=3, 北=4
+        // Seasons: s1=春(東), s2=夏(南), s3=秋(西), s4=冬(北)
+        // Plants:  f1=梅(東), f2=蘭(南), f3=菊(西), f4=竹(北)
+        const seatWindIdx = ['dong', 'nan', 'xi', 'bei'].indexOf(context.seatWind);
+        if (seatWindIdx >= 0) {
+            const matchNum = seatWindIdx + 1; // 1-4
+            const matchingSeason = `s${matchNum}`;
+            const matchingPlant = `f${matchNum}`;
+            const seatWindName = ['東', '南', '西', '北'][seatWindIdx];
+            if (flowers.includes(matchingSeason)) {
+                const seasonNames = { s1: '春', s2: '夏', s3: '秋', s4: '冬' };
+                details.push({ name: `正花 ${seasonNames[matchingSeason]}（${seatWindName}位）`, tai: 1 });
+                totalTai += 1;
+            }
+            if (flowers.includes(matchingPlant)) {
+                const plantNames = { f1: '梅', f2: '蘭', f3: '菊', f4: '竹' };
+                details.push({ name: `正花 ${plantNames[matchingPlant]}（${seatWindName}位）`, tai: 1 });
+                totalTai += 1;
+            }
+        }
+
+        // 1c. 花槓 (Complete flower set = 2 台 each)
+        const hasAllSeasons = ['s1', 's2', 's3', 's4'].every(f => flowers.includes(f));
+        const hasAllPlants = ['f1', 'f2', 'f3', 'f4'].every(f => flowers.includes(f));
+        if (hasAllSeasons) {
+            details.push({ name: '花槓（春夏秋冬）', tai: 2 });
+            totalTai += 2;
+        }
+        if (hasAllPlants) {
+            details.push({ name: '花槓（梅蘭菊竹）', tai: 2 });
+            totalTai += 2;
+        }
+
+        // 1d. 八仙過海 (All 8 flowers = automatic win, treated as self-draw)
+        if (flowerCount === 8) {
+            details.push({ name: '八仙過海', tai: 8 });
+            totalTai += 8;
+        }
 
         // 2. Winds / Dragons (Pongs/Kongs)
         // Combine hand + melds to find triplets
@@ -233,15 +274,34 @@ const MahjongAlgorithm = {
             totalTai += 1;
         }
 
+        // 5b. 海底撈月 / 海底撈砲 (Last tile win)
+        if (context.isLastTile) {
+            if (context.isSelfDraw) {
+                details.push({ name: '海底撈月', tai: 1 });
+                totalTai += 1;
+            } else {
+                details.push({ name: '海底撈砲', tai: 1 });
+                totalTai += 1;
+            }
+        }
+
         // 6. Door Clear (Men-Qing) -> No open melds (except concealed kong? Simplified: No open)
         if (openMelds.length === 0) { // && context.isSelfDraw usually?
             // Taiwan rules: Men Qing (No open) = 1 Tai.
             // Usually implies Self Draw? Or Ron too?
-            // Men Qing Ron = 1 Tai. Men Qing Tsumo = 1 (MenQing) + 1 (Tsumo) + ? 
+            // Men Qing Ron = 1 Tai. Men Qing Tsumo = 1 (MenQing) + 1 (Tsumo) + ?
             // Some rules say Men Qing Tsumo = 3 Tai.
             // We stick to base: Men Qing = 1 Tai.
             details.push({ name: '門清', tai: 1 });
             totalTai += 1;
+        }
+
+        // 7. 連莊加台 (連N拉N)
+        // 莊家胡牌時，連莊次數 = 額外台數
+        // 例：連一拉一 = +1台，連二拉二 = +2台
+        if (context.isDealer && context.lianZhuang > 0) {
+            details.push({ name: `連${context.lianZhuang}拉${context.lianZhuang}`, tai: context.lianZhuang });
+            totalTai += context.lianZhuang;
         }
 
         return { total: totalTai, details: details };

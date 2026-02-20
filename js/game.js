@@ -26,7 +26,10 @@ const MahjongGame = (() => {
         diceResult: [0, 0, 0],
         centerDiscards: [],
         dealing: false,
-        userCanDraw: false  // Is wall clickable for user to draw?
+        userCanDraw: false, // Is wall clickable for user to draw?
+        tutorialMode: true,
+        speedMultiplier: 1, // 1 = normal, 0.5 = 2x speed
+        lianZhuang: 0       // 連莊次數 (0=初莊)
     };
 
     // Persistent scoring state (survives across games)
@@ -34,13 +37,8 @@ const MahjongGame = (() => {
 
     // --- Drawn Tile Preview Helper ---
     function showDrawnTilePreview(tile) {
-        console.log('showDrawnTilePreview executing for:', tile);
         const preview = document.getElementById('drawn-tile-preview');
         const container = document.getElementById('preview-tile-container');
-
-        if (!preview) console.error('Preview element not found!');
-        if (!container) console.error('Container element not found!');
-
         if (!preview || !container) return;
 
         // Clear previous
@@ -287,7 +285,62 @@ const MahjongGame = (() => {
 
     // ===== GAME FLOW =====
 
+    function showNewGameModal() {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('newgame-modal');
+            if (!modal) { resolve({ tutorial: false, speed2x: false }); return; }
+
+            // Load saved preferences
+            const saved = JSON.parse(localStorage.getItem('mahjong_newgame_opts') || '{}');
+            const tutorialCb = document.getElementById('opt-tutorial');
+            const speedCb = document.getElementById('opt-speed');
+            if (tutorialCb && saved.tutorial !== undefined) tutorialCb.checked = saved.tutorial;
+            if (speedCb && saved.speed2x !== undefined) speedCb.checked = saved.speed2x;
+
+            modal.classList.remove('hidden');
+
+            const startBtn = document.getElementById('newgame-start');
+            const cancelBtn = document.getElementById('newgame-cancel');
+
+            function cleanup() {
+                modal.classList.add('hidden');
+                startBtn.removeEventListener('click', onStart);
+                cancelBtn.removeEventListener('click', onCancel);
+            }
+
+            function onStart() {
+                const opts = {
+                    tutorial: tutorialCb ? tutorialCb.checked : false,
+                    speed2x: speedCb ? speedCb.checked : false
+                };
+                localStorage.setItem('mahjong_newgame_opts', JSON.stringify(opts));
+                cleanup();
+                resolve(opts);
+            }
+
+            function onCancel() {
+                cleanup();
+                resolve(null);
+            }
+
+            startBtn.addEventListener('click', onStart);
+            cancelBtn.addEventListener('click', onCancel);
+        });
+    }
+
+    // Helper: adjusted sleep based on speed multiplier
+    function tsleep(ms) {
+        return sleep(ms * state.speedMultiplier);
+    }
+
     async function startGame() {
+        // Show new game options modal
+        const options = await showNewGameModal();
+        if (!options) return; // User cancelled
+
+        state.tutorialMode = options.tutorial;
+        state.speedMultiplier = options.speed2x ? 0.5 : 1;
+
         state.aiSpeed = parseInt(document.getElementById('ai-speed').value) || 5000;
         state.active = false;
         state.dealing = true;
@@ -362,7 +415,11 @@ const MahjongGame = (() => {
         renderWall();
         updateInfoPanel();
 
-        await showToast('抓牌完成！遊戲開始', 1500);
+        if (state.tutorialMode) {
+            await showToast('✅ 準備完成！莊家先出牌，輪到你時可以從牌墩摸牌', 2500 * state.speedMultiplier);
+        } else {
+            await showToast('抓牌完成！遊戲開始', 1500 * state.speedMultiplier);
+        }
 
         // Dealer's first draw
         if (state.dealer === 0) {
@@ -379,6 +436,7 @@ const MahjongGame = (() => {
         const d3 = Math.floor(Math.random() * 6) + 1;
         state.diceResult = [d1, d2, d3];
         const total = d1 + d2 + d3;
+        const sm = state.speedMultiplier;
 
         // Show dice animation
         const diceArea = document.getElementById('dice-display');
@@ -391,34 +449,60 @@ const MahjongGame = (() => {
             diceArea.classList.add('dice-rolling');
         }
 
-        await showToast('🎲 莊家擲骰子...', 1200);
+        await showToast('🎲 莊家擲骰子...', 1200 * sm);
 
         // Stop rolling animation, show result
         if (diceArea) diceArea.classList.remove('dice-rolling');
-        await sleep(300);
+        await tsleep(300);
 
         // Calculate which player's wall to break
-        // Count counter-clockwise from dealer: 1=dealer, 2=right(下家), 3=across(對家), 4=left(上家), 5=dealer again...
         const wallOwner = (state.dealer + (total - 1)) % 4;
         const wallOwnerName = PLAYER_NAMES[wallOwner];
         const wallOwnerWind = WIND_CHARS[(wallOwner - state.dealer + 4) % 4];
 
-        // Educational toast sequence
-        await showToastSequence([
-            { text: `🎲 骰出 ${getDiceEmoji(d1)} ${getDiceEmoji(d2)} ${getDiceEmoji(d3)} = <strong>${total}</strong>`, duration: 2000 },
-            { text: `從莊家（${WIND_CHARS[0]}）逆時針數 ${total} 位`, duration: 2500 },
-            { text: `👉 數到 <strong>${wallOwnerName}</strong>（${wallOwnerWind}風）的牌墩`, duration: 2500 },
-            { text: `從 ${wallOwnerName} 前方的牌墩，右邊數第 <strong>${total}</strong> 墩開始取牌`, duration: 3000 },
-            { text: `逆時針方向，每人每次取 <strong>4 張</strong>，共取 4 輪`, duration: 2500 },
-        ]);
+        if (state.tutorialMode) {
+            // Full educational toast sequence
+            await showToastSequence([
+                { text: `🎲 骰出 ${getDiceEmoji(d1)} ${getDiceEmoji(d2)} ${getDiceEmoji(d3)} = <strong>${total}</strong>`, duration: 2000 * sm },
+                { text: `從莊家（${WIND_CHARS[0]}）逆時針數 ${total} 位`, duration: 2500 * sm },
+                { text: `👉 數到 <strong>${wallOwnerName}</strong>（${wallOwnerWind}風）的牌墩`, duration: 2500 * sm },
+                { text: `從 ${wallOwnerName} 前方的牌墩，右邊數第 <strong>${total}</strong> 墩開始取牌`, duration: 3000 * sm },
+                { text: `逆時針方向，每人每次取 <strong>4 張</strong>，共取 4 輪`, duration: 2500 * sm },
+            ]);
+
+            // Highlight the wall side being broken
+            highlightWallSide(wallOwner);
+            await tsleep(1500);
+            clearWallHighlights();
+        } else {
+            // Brief summary only
+            await showToast(`🎲 ${getDiceEmoji(d1)}${getDiceEmoji(d2)}${getDiceEmoji(d3)} = ${total}，從 ${wallOwnerName} 開始取牌`, 1800 * sm);
+        }
 
         if (diceArea) {
-            await sleep(500);
+            await tsleep(500);
             diceArea.innerHTML = '';
         }
 
         // Set wall draw start position based on dice result
         setWallDrawStart();
+    }
+
+    // Highlight a wall side for tutorial
+    function highlightWallSide(playerIndex) {
+        const sideNames = ['bottom', 'right', 'top', 'left'];
+        const wallEl = document.getElementById('tile-wall');
+        if (!wallEl) return;
+        const sides = wallEl.querySelectorAll('.wall-side');
+        // playerIndex: 0=bottom(self), 1=right(下家), 2=top(對家), 3=left(上家)
+        const sideIndex = playerIndex; // matches wall-side rendering order
+        if (sides[sideIndex]) {
+            sides[sideIndex].classList.add('wall-highlight');
+        }
+    }
+
+    function clearWallHighlights() {
+        document.querySelectorAll('.wall-highlight').forEach(el => el.classList.remove('wall-highlight'));
     }
 
     function getDiceEmoji(n) {
@@ -427,6 +511,7 @@ const MahjongGame = (() => {
 
     // --- Deal Sequence ---
     async function dealSequence() {
+        const sm = state.speedMultiplier;
         const dealOrder = [];
         for (let round = 0; round < 4; round++) {
             for (let p = 0; p < 4; p++) {
@@ -434,10 +519,13 @@ const MahjongGame = (() => {
             }
         }
 
+        if (state.tutorialMode) {
+            await showToast('📋 開始抓牌：從牌墩依序取牌，每人每次 4 張', 2000 * sm);
+        }
+
         for (let i = 0; i < dealOrder.length; i++) {
             const playerId = dealOrder[i];
             const tiles = state.deck.splice(0, 4);
-            // Update wall visual: 4 tiles = 2 stacks (Normal Draw)
             drawFromWall('normal');
             drawFromWall('normal');
             drawFromWall('normal');
@@ -454,21 +542,23 @@ const MahjongGame = (() => {
             // Show progress every 4 players (end of a round)
             if (i % 4 === 3) {
                 const roundNum = Math.floor(i / 4) + 1;
-                await showToast(`第 ${roundNum} 輪抓牌完成（每人 ${roundNum * 4} 張）`, 1000);
+                await showToast(`第 ${roundNum} 輪抓牌完成（每人 ${roundNum * 4} 張）`, 1000 * sm);
             }
-            await sleep(120);
+            await sleep(120 * sm);
         }
 
         state.players[0].hand = sortTiles(state.players[0].hand);
         renderAll();
-        await showToast('16 張抓牌完成，開始補花...', 1500);
-        await sleep(400);
+        await showToast('16 張抓牌完成，開始補花...', 1500 * sm);
+        await tsleep(400);
     }
 
     // --- Flower Replacement ---
     async function replaceAllFlowers() {
+        const sm = state.speedMultiplier;
         let anyReplaced = true;
         let maxIter = 20;
+        let isFirst = true;
 
         while (anyReplaced && maxIter > 0) {
             anyReplaced = false;
@@ -482,6 +572,12 @@ const MahjongGame = (() => {
                 });
 
                 if (flowerIndices.length > 0) {
+                    // Tutorial: explain flower replacement on first occurrence
+                    if (isFirst && state.tutorialMode) {
+                        isFirst = false;
+                        await showToast('🌸 補花：花牌不能用來組牌，需從牌墩尾端補回等量新牌', 2500 * sm);
+                    }
+
                     anyReplaced = true;
                     flowerIndices.sort((a, b) => b - a);
                     const flowerNames = flowerIndices.map(idx => getTileDisplay(player.hand[idx])).join(' ');
@@ -491,8 +587,8 @@ const MahjongGame = (() => {
                     });
                     for (let f = 0; f < flowerIndices.length; f++) {
                         if (state.deck.length > 0) {
-                            player.hand.push(state.deck.shift()); // Supplement from front of deck array (logic), but visually from replacement wall
-                            drawFromWall('replacement'); // Visual: Tail move
+                            player.hand.push(state.deck.shift());
+                            drawFromWall('replacement');
                         }
                     }
 
@@ -503,7 +599,7 @@ const MahjongGame = (() => {
                     renderWall();
                     await showToast(
                         `🌸 ${PLAYER_NAMES[p]} 補花：${flowerNames}（補 ${flowerIndices.length} 張）`,
-                        1500
+                        1500 * sm
                     );
                 }
             }
@@ -696,10 +792,15 @@ const MahjongGame = (() => {
     }
 
     // --- Drawing ---
+    function handleDraw() {
+        state.lianZhuang++;
+        state.active = false;
+        showToast(`🔚 流局（臭莊）！莊家 ${PLAYER_NAMES[state.dealer]} 連莊（連 ${state.lianZhuang}）`, 4000);
+    }
+
     function drawTileForPlayer(playerId) {
-        if (!state.active || state.deck.length === 0) {
-            showToast('🔚 流局！牌已摸完，本局結束。', 3000);
-            state.active = false;
+        if (!state.active || state.deck.length <= 16) {
+            handleDraw();
             return;
         }
 
@@ -738,11 +839,8 @@ const MahjongGame = (() => {
             }
 
             state.currentPlayer = 0;
-            state.currentPlayer = 0;
             renderUserHand(true); // Enable interaction (justDrew=true)
 
-            // Show new preview
-            console.log('Calling showDrawnTilePreview for:', tile);
             showDrawnTilePreview(tile);
             startTurnTimer();
 
@@ -772,7 +870,7 @@ const MahjongGame = (() => {
     }
 
     function nextTurn() {
-        if (!state.active) return;
+        if (!state.active || state.waitingForAction) return;
         state.currentPlayer = (state.currentPlayer + 1) % 4;
         // Reset Guo Shui on turn start
         state.players[state.currentPlayer].guoShui = false;
@@ -788,11 +886,10 @@ const MahjongGame = (() => {
 
     function aiTurn(playerId) {
         try {
-            if (!state.active) return;
+            if (!state.active || state.waitingForAction) return;
 
-            if (state.deck.length === 0) {
-                showToast('🔚 流局！牌已摸完。', 3000);
-                state.active = false;
+            if (state.deck.length <= 16) {
+                handleDraw();
                 return;
             }
 
@@ -834,7 +931,7 @@ const MahjongGame = (() => {
 
             setTimeout(() => {
                 try {
-                    if (!state.active) return;
+                    if (!state.active || state.waitingForAction) return;
                     const hand = state.players[playerId].hand;
                     let discardIdx = -1;
 
@@ -919,6 +1016,16 @@ const MahjongGame = (() => {
                 state.waitingForAction = true;
                 showActionBar(tile, discarderId, chiResult, pongResult, false);
                 return true;
+            }
+
+            // Debug hint: explain why chi/pong isn't available when 上家 discards
+            if (discarderId === 3) {
+                const suit = getSuit(tile);
+                if (!suit) {
+                    showToast(`${getTileDisplay(tile)} 是字牌，不能吃`, 1200);
+                } else {
+                    showToast(`手中沒有能與 ${getTileDisplay(tile)} 組順子的牌`, 1200);
+                }
             }
         }
 
@@ -1115,7 +1222,7 @@ const MahjongGame = (() => {
     }
 
     function updateTileCount() {
-        const el = document.getElementById('tiles-count');
+        const el = document.getElementById('remain-count');
         if (el) el.textContent = state.deck.length;
     }
 
@@ -1153,7 +1260,6 @@ const MahjongGame = (() => {
         const prompt = document.getElementById('action-prompt');
         const chiBtn = document.getElementById('btn-chi');
         const pongBtn = document.getElementById('btn-pong');
-        const gangBtn = document.getElementById('btn-gang');
         const huBtn = document.getElementById('btn-hu');
 
         if (!bar) return;
@@ -1164,8 +1270,7 @@ const MahjongGame = (() => {
         // Reset
         chiBtn.disabled = !chiResult.valid;
         pongBtn.disabled = !pongResult.valid;
-        gangBtn.disabled = true; // Todo
-        huBtn.disabled = !canWin; // Enabled only if canWin passed
+        huBtn.disabled = !canWin;
 
         if (canWin) {
             huBtn.classList.add('highlight-pulse');
@@ -1195,11 +1300,13 @@ const MahjongGame = (() => {
         };
         document.getElementById('btn-pass').onclick = () => passAction();
         bar.classList.remove('hidden');
+        if (typeof resizeTable === 'function') resizeTable();
     }
 
     function hideActionBar() {
         const bar = document.getElementById('action-bar');
         if (bar) bar.classList.add('hidden');
+        if (typeof resizeTable === 'function') resizeTable();
     }
 
     function sortUserHand() {
@@ -1260,10 +1367,11 @@ const MahjongGame = (() => {
         const player = state.players[winnerId];
         const context = {
             roundWind: state.roundWind || 'dong',
-            // Seat wind logic: (winner - dealer + 4) % 4. 0=Dong.
-            // Map 0->dong, 1->nan...
             seatWind: ['dong', 'nan', 'xi', 'bei'][(winnerId - state.dealer + 4) % 4],
-            isSelfDraw: isZimo
+            isSelfDraw: isZimo,
+            isLastTile: state.deck.length <= 16,  // 海底：摸最後一張或被打最後一張
+            lianZhuang: state.lianZhuang,          // 連莊次數 for 連N拉N
+            isDealer: winnerId === state.dealer     // 是否為莊家
         };
 
         const result = MahjongAlgorithm.calculateScore(player.hand, player.melds, player.flowers, context);
@@ -1359,46 +1467,23 @@ const MahjongGame = (() => {
         // End the game
         state.active = false;
         showSelfDrawHuButton(false);
-        // Maybe auto restart?
-        showToast('本局結束，請按「開始遊戲」進行下一局', 3000);
+
+        // Dealer rotation logic (莊家輪替)
+        if (winnerId === state.dealer) {
+            // 莊家胡牌 → 連莊
+            state.lianZhuang++;
+            showToast(`本局結束！莊家 ${PLAYER_NAMES[state.dealer]} 連莊（連 ${state.lianZhuang}）`, 3000);
+        } else {
+            // 非莊家胡 → 莊家換人，連莊歸零
+            state.lianZhuang = 0;
+            state.dealer = (state.dealer + 1) % 4;
+            showToast(`本局結束！下一局莊家：${PLAYER_NAMES[state.dealer]}`, 3000);
+        }
     }
 
     function showSelfDrawHuButton(show) {
         const btn = document.getElementById('hu-self-btn');
         if (btn) btn.style.display = show ? 'inline-block' : 'none';
-    }
-
-    function openWinModal(isZimo, loserId) {
-        const modal = document.getElementById('win-modal');
-        if (!modal) return;
-
-        // Set type buttons
-        const zimoBtn = document.getElementById('win-type-zimo');
-        const huBtn = document.getElementById('win-type-hu');
-        if (isZimo) {
-            zimoBtn.classList.add('active');
-            huBtn.classList.remove('active');
-        } else {
-            huBtn.classList.add('active');
-            zimoBtn.classList.remove('active');
-        }
-
-        modal.dataset.isZimo = isZimo;
-        modal.dataset.loserId = loserId || -1;
-
-        // Reset tai input
-        document.getElementById('win-tai-count').value = 1;
-        updateWinPreview();
-        modal.classList.remove('hidden');
-    }
-
-    function updateWinPreview() {
-        const tai = parseInt(document.getElementById('win-tai-count').value) || 0;
-        const modal = document.getElementById('win-modal');
-        const isZimo = modal.dataset.isZimo === 'true';
-        const amount = calculateWinAmount(tai, isZimo);
-        const previewEl = document.getElementById('win-preview-amount');
-        if (previewEl) previewEl.textContent = `+${amount}`;
     }
 
     function initScoringUI() {
@@ -1431,62 +1516,6 @@ const MahjongGame = (() => {
         }
         if (settingsCancel) {
             settingsCancel.onclick = () => settingsModal.classList.add('hidden');
-        }
-
-        // Win modal
-        const winModal = document.getElementById('win-modal');
-        const winConfirm = document.getElementById('win-confirm');
-        const winCancel = document.getElementById('win-cancel');
-        const taiInput = document.getElementById('win-tai-count');
-        const zimoBtn = document.getElementById('win-type-zimo');
-        const huBtn = document.getElementById('win-type-hu');
-
-        if (taiInput) taiInput.oninput = () => updateWinPreview();
-
-        if (zimoBtn) {
-            zimoBtn.onclick = () => {
-                winModal.dataset.isZimo = 'true';
-                zimoBtn.classList.add('active');
-                huBtn.classList.remove('active');
-                updateWinPreview();
-            };
-        }
-        if (huBtn) {
-            huBtn.onclick = () => {
-                winModal.dataset.isZimo = 'false';
-                huBtn.classList.add('active');
-                zimoBtn.classList.remove('active');
-                updateWinPreview();
-            };
-        }
-
-        if (winConfirm) {
-            winConfirm.onclick = () => {
-                const tai = parseInt(taiInput.value) || 0;
-                const isZimo = winModal.dataset.isZimo === 'true';
-                const loserId = parseInt(winModal.dataset.loserId);
-                declareWin(0, tai, isZimo, loserId >= 0 ? loserId : state.lastDiscardPlayer);
-                winModal.classList.add('hidden');
-            };
-        }
-        if (winCancel) {
-            winCancel.onclick = () => winModal.classList.add('hidden');
-        }
-
-        // Self-draw hu button (in controls bar)
-        const huSelfBtn = document.getElementById('hu-self-btn');
-        if (huSelfBtn) {
-            huSelfBtn.onclick = () => openWinModal(true, -1);
-        }
-
-        // Hu button in action bar (when opponent discards)
-        const huActionBtn = document.getElementById('btn-hu');
-        if (huActionBtn) {
-            huActionBtn.onclick = () => {
-                hideActionBar();
-                state.waitingForAction = false;
-                openWinModal(false, state.lastDiscardPlayer);
-            };
         }
 
         // Load saved scoreboard

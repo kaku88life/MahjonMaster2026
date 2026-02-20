@@ -161,36 +161,42 @@ function resizeTable() {
     const table = document.querySelector('.mahjong-table-container');
     if (!table) return;
 
-    // Base dimensions
     const baseWidth = 800;
     const baseHeight = 800;
 
-    // Available space (subtract header ~100px, footer ~100px buffer)
-    // On mobile, header might be smaller.
-    const headerHeight = window.innerHeight < 700 ? 60 : 100;
-    const footerHeight = 80;
-    const paddingX = 20;
+    // Measure available width from parent container
+    const gameTable = document.getElementById('game-table');
+    const availableW = (gameTable ? gameTable.clientWidth : window.innerWidth) - 16;
 
-    const availableW = window.innerWidth - paddingX;
-    const availableH = window.innerHeight - headerHeight - footerHeight;
+    // Only subtract elements ABOVE the table (header + tabs) for height calc
+    const header = document.querySelector('header');
+    const tabs = document.querySelector('.tabs');
+    let aboveHeight = 0;
+    if (header) aboveHeight += header.offsetHeight;
+    if (tabs) aboveHeight += tabs.offsetHeight;
+    aboveHeight += 20; // margin buffer
 
-    // Calculate scale
-    let scale = Math.min(availableW / baseWidth, availableH / baseHeight);
+    const availableH = window.innerHeight - aboveHeight;
 
-    // Optional: Max scale cap? (e.g. 1.2)
-    // scale = Math.min(scale, 1.5); 
+    // Device-aware scaling strategy
+    let scale;
+    if (window.innerWidth > 768) {
+        // Desktop: prioritize width, allow scrolling for content below
+        scale = Math.min(availableW / baseWidth, availableH / baseHeight, 1.0);
+        scale = Math.max(scale, 0.55); // desktop minimum
+    } else {
+        // Mobile: fit width, allow vertical scroll
+        scale = Math.min(availableW / baseWidth, 0.95);
+        scale = Math.max(scale, 0.35); // mobile minimum
+    }
 
     // Apply scale
     table.style.transform = `scale(${scale})`;
 
-    // Adjust layout flow (since transform doesn't affect flow size)
-    // We reduce the effective height of the container to pull up elements below
+    // Compensate margin so document flow reflects scaled size
     const effectiveHeight = baseHeight * scale;
     const gap = baseHeight - effectiveHeight;
     table.style.marginBottom = `-${gap}px`;
-
-    // Also adjust width margin if needed? 
-    // margin: auto handles horizontal.
 }
 
 window.addEventListener('resize', resizeTable);
