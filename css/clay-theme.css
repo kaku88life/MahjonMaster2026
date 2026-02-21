@@ -160,12 +160,12 @@ h1 {
     padding: 20px;
 }
 
-/* Tiles */
+/* Tiles - 2.5D style */
 .tile {
     width: 48px;
     height: 64px;
-    background: #FFFFFF;
-    border-radius: 12px;
+    background: linear-gradient(170deg, #FFFFFF 0%, #F8F8F8 30%, #F0F0F0 60%, #E4E4E4 100%);
+    border-radius: 6px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -175,20 +175,49 @@ h1 {
     cursor: pointer;
     user-select: none;
     position: relative;
-    box-shadow: 5px 5px 10px rgba(163, 177, 198, 0.4), -5px -5px 10px rgba(255, 255, 255, 0.8);
-    border: 2px solid #F1F5F9;
+    /* 4-layer bottom thickness (8px) + right side edge + soft shadow */
+    box-shadow:
+        0 2px 0 #D0D0D0,
+        0 4px 0 #BEBEBE,
+        0 6px 0 #A8A8A8,
+        0 8px 0 #909090,
+        0 9px 5px rgba(0, 0, 0, 0.4),
+        0 13px 12px rgba(0, 0, 0, 0.15),
+        2px 3px 0 #C0C0C0,
+        2px 6px 0 #A0A0A0,
+        inset 0 2px 0 rgba(255, 255, 255, 0.95),
+        inset 2px 0 0 rgba(255, 255, 255, 0.5),
+        inset -1px 0 0 rgba(180, 180, 180, 0.4);
+    border: 1px solid #B8B8B8;
+    border-top: 1px solid #D8D8D8;
+    border-bottom: 2px solid #888888;
+    border-right: 2px solid #A8A8A8;
     color: #334155;
     transition: transform 0.1s, box-shadow 0.1s;
 }
 
 .tile:hover {
-    transform: translateY(-4px);
-    box-shadow: 8px 8px 15px rgba(163, 177, 198, 0.5), -8px -8px 15px rgba(255, 255, 255, 0.9);
+    transform: translateY(-6px);
+    box-shadow:
+        0 4px 0 #D0D0D0,
+        0 6px 0 #BEBEBE,
+        0 8px 0 #A8A8A8,
+        0 10px 0 #909090,
+        0 12px 6px rgba(0, 0, 0, 0.4),
+        0 16px 16px rgba(0, 0, 0, 0.2),
+        2px 5px 0 #C0C0C0,
+        2px 8px 0 #A0A0A0,
+        inset 0 2px 0 rgba(255, 255, 255, 0.95),
+        inset 2px 0 0 rgba(255, 255, 255, 0.5);
 }
 
 .tile:active {
     transform: scale(0.96);
-    box-shadow: inset 3px 3px 6px rgba(163, 177, 198, 0.4);
+    box-shadow:
+        0 1px 0 #BEBEBE,
+        0 3px 0 #A0A0A0,
+        0 4px 3px rgba(0, 0, 0, 0.25),
+        inset 3px 3px 6px rgba(163, 177, 198, 0.4);
 }
 
 .tile[data-suit="wan"] {
@@ -535,7 +564,35 @@ button#analyze-btn:hover {
     border: 2px solid #F1F5F9;
     transition: transform 0.2s;
     text-align: center;
-    /* Center patterns */
+    margin-bottom: 18px;
+}
+
+.pattern-category {
+    margin-bottom: 10px;
+}
+
+.pattern-example .hand-display {
+    min-height: auto;
+    gap: 3px;
+    padding: 10px 12px;
+}
+
+.pattern-example .hand-display .tile {
+    width: 38px;
+    height: 52px;
+    font-size: 24px;
+    border-radius: 5px;
+}
+
+.meld-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+    color: #9CA3AF;
+    margin: 0 4px;
+    user-select: none;
 }
 
 .pattern-card h4 {
@@ -648,13 +705,15 @@ button#analyze-btn:hover {
     }
 }
 
-/* --- Game Table Layout (4-Player) --- */
+/* --- Game Table Layout (4-Player, 2.5D Perspective) --- */
 .game-table {
     position: relative;
     width: 100%;
     overflow: visible;
     margin-bottom: 0;
     padding: 0;
+    perspective: 1200px;
+    perspective-origin: 50% 60%;
 }
 
 .player-area {
@@ -703,10 +762,10 @@ button#analyze-btn:hover {
 
 /* Top Player (對家 C) */
 .top-player {
-    top: 10px;
+    top: 8px;
     left: 50%;
     transform: translateX(-50%);
-    width: 60%;
+    width: 55%;
     flex-direction: column;
 }
 
@@ -714,31 +773,37 @@ button#analyze-btn:hover {
     margin-top: 5px;
 }
 
-/* Bottom Player (User) */
+/* Bottom Player (User) - Outside 3D container */
 .bottom-player {
-    bottom: 8px;
-    left: 1%;
-    right: 1%;
-    width: auto;
-    z-index: 10;
+    position: relative;
+    width: 100%;
+    max-width: 1000px;
+    margin: -10px auto 0;
+    z-index: 30;
     overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
 }
 
 .bottom-player .hand-display {
-    background: rgba(0, 0, 0, 0.15);
-    box-shadow: none;
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 8px 4px;
+    background: linear-gradient(180deg, rgba(4, 78, 59, 0.95), rgba(2, 48, 36, 0.98));
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3), inset 0 2px 10px rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px 20px 16px 16px;
+    padding: 12px 8px;
     margin-bottom: 0;
-    min-height: 55px;
+    min-height: 70px;
     flex-wrap: nowrap;
-    gap: 3px;
+    gap: 4px;
 }
 
 .bottom-player .hand-display .tile {
-    flex: 0 1 48px;
-    min-width: 30px;
+    flex: 0 1 52px;
+    min-width: 34px;
+    height: 70px;
+    font-size: 36px;
 }
 
 .bottom-player .discard-area {
@@ -747,16 +812,16 @@ button#analyze-btn:hover {
 
 /* Left Player (上家 B) */
 .left-player {
-    left: 8px;
-    top: 50%;
+    left: 10px;
+    top: 48%;
     transform: translateY(-50%);
     flex-direction: row;
-    gap: 8px;
+    gap: 6px;
 }
 
 /* Right Player (下家 A) */
 .right-player {
-    right: 8px;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
     flex-direction: row-reverse;
@@ -778,22 +843,75 @@ button#analyze-btn:hover {
     gap: 1px;
 }
 
+/* === Tile Backs: Directional lighting for 3D realism === */
+/* 對家 (top) tiles: Light from above → shadow falls DOWN */
 .tile-back-h {
-    width: 28px;
-    height: 38px;
-    background: linear-gradient(135deg, #10B981, #059669);
+    width: 36px;
+    height: 48px;
+    background: linear-gradient(180deg, #5BEBB0, #34D399 30%, #059669 100%);
     border: 1px solid #047857;
-    border-radius: 4px;
-    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    border-top: 1px solid #6AEDB8;
+    border-bottom: 2px solid #04503A;
+    border-radius: 5px;
+    box-shadow:
+        0 2px 0 #059669,
+        0 4px 0 #047857,
+        0 6px 0 #065F46,
+        0 8px 0 #04503A,
+        0 9px 5px rgba(0, 0, 0, 0.4),
+        0 12px 10px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
+/* 左右兩側共用基礎 — 預設陰影往下 */
 .tile-back-v {
-    width: 38px;
-    height: 20px;
-    background: linear-gradient(135deg, #10B981, #059669);
+    width: 48px;
+    height: 28px;
+    background: linear-gradient(160deg, #4ADE80, #34D399 30%, #059669 100%);
     border: 1px solid #047857;
-    border-radius: 4px;
-    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    border-top: 1px solid #5DE8A8;
+    border-bottom: 2px solid #04503A;
+    border-radius: 5px;
+    box-shadow:
+        0 2px 0 #059669,
+        0 4px 0 #047857,
+        0 6px 0 #065F46,
+        0 8px 0 #04503A,
+        0 9px 5px rgba(0, 0, 0, 0.4),
+        0 12px 10px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* 右側玩家 (right-player): Light from right → shadow falls LEFT & DOWN */
+.right-player .tile-back-v {
+    background: linear-gradient(200deg, #5BEBB0, #34D399 30%, #059669 100%);
+    border-right: 1px solid #5DE8A8;
+    border-left: 2px solid #04503A;
+    border-top: 1px solid #047857;
+    box-shadow:
+        -2px 2px 0 #059669,
+        -4px 4px 0 #047857,
+        -6px 6px 0 #065F46,
+        -8px 8px 0 #04503A,
+        -9px 9px 5px rgba(0, 0, 0, 0.4),
+        -10px 12px 10px rgba(0, 0, 0, 0.15),
+        inset 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+/* 左側玩家 (left-player): Light from left → shadow falls RIGHT & DOWN */
+.left-player .tile-back-v {
+    background: linear-gradient(340deg, #5BEBB0, #34D399 30%, #059669 100%);
+    border-left: 1px solid #5DE8A8;
+    border-right: 2px solid #04503A;
+    border-top: 1px solid #047857;
+    box-shadow:
+        2px 2px 0 #059669,
+        4px 4px 0 #047857,
+        6px 6px 0 #065F46,
+        8px 8px 0 #04503A,
+        9px 9px 5px rgba(0, 0, 0, 0.4),
+        10px 12px 10px rgba(0, 0, 0, 0.15),
+        inset -1px 0 0 rgba(255, 255, 255, 0.25);
 }
 
 /* Discard Areas */
@@ -828,42 +946,53 @@ button#analyze-btn:hover {
     box-shadow: 5px 5px 10px rgba(163, 177, 198, 0.4), -5px -5px 10px rgba(255, 255, 255, 0.8);
 }
 
-/* --- Info Panel (top-right corner of table) --- */
-.info-panel {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: rgba(0, 0, 0, 0.45);
-    padding: 10px 14px;
-    border-radius: 14px;
+/* --- Floating Info Panel (top-right, scoreboard style) --- */
+.floating-info-panel {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 200;
+}
+
+.fip-panel {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    padding: 20px 28px;
+    min-width: 280px;
     text-align: center;
     color: white;
-    z-index: 15;
-    backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    min-width: 110px;
 }
 
-.round-display {
-    font-size: 0.8rem;
+.fip-round {
+    font-size: 1.6rem;
     color: #A7F3D0;
-    margin-bottom: 4px;
     font-weight: bold;
+    margin-bottom: 8px;
 }
 
-.turn-indicator {
-    font-size: 0.85rem;
+.fip-turn {
+    font-size: 1.7rem;
     font-weight: bold;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
     color: #FCD34D;
-    max-width: 130px;
+    max-width: 280px;
     word-wrap: break-word;
 }
 
-.remain-count {
-    font-size: 0.75rem;
-    opacity: 0.7;
-    margin-top: 4px;
+.fip-remain {
+    font-size: 1.5rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 8px;
+}
+
+.fip-stats {
+    margin-top: 12px;
+    font-size: 1.4rem;
+    color: #A7F3D0;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    padding-top: 8px;
 }
 
 /* Wind badges on player labels */
@@ -905,8 +1034,17 @@ button#analyze-btn:hover {
     width: 28px !important;
     height: 36px !important;
     font-size: 17px !important;
-    border-radius: 5px;
-    box-shadow: 1px 2px 6px rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    /* 3-layer bottom thickness (6px) — proportional to small size */
+    box-shadow:
+        0 2px 0 #D0D0D0,
+        0 4px 0 #BEBEBE,
+        0 6px 0 #A0A0A0,
+        0 7px 4px rgba(0, 0, 0, 0.35),
+        0 10px 6px rgba(0, 0, 0, 0.1),
+        1px 2px 0 #C0C0C0,
+        1px 4px 0 #A0A0A0,
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
     pointer-events: auto;
     cursor: default;
     transition: box-shadow 0.2s;
@@ -1036,6 +1174,52 @@ button#analyze-btn:hover {
     object-fit: cover;
 }
 
+/* --- Opponent Melds Display --- */
+.opponent-melds {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.horizontal-melds {
+    justify-content: center;
+    flex-direction: row;
+}
+
+.vertical-melds {
+    flex-direction: column;
+    align-items: center;
+}
+
+.opponent-meld-group {
+    display: inline-flex;
+    gap: 1px;
+    padding: 2px 3px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.opponent-meld-tile {
+    width: 26px !important;
+    height: 34px !important;
+    font-size: 15px !important;
+    border-radius: 4px !important;
+    cursor: default !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+.vertical-melds .opponent-meld-group {
+    flex-direction: row;
+}
+
+.vertical-melds .opponent-meld-tile {
+    width: 22px !important;
+    height: 30px !important;
+    font-size: 12px !important;
+}
+
 /* User tile interactions */
 .user-tile {
     cursor: pointer;
@@ -1161,36 +1345,136 @@ button#analyze-btn:hover {
     }
 }
 
-/* Center Discard Pile - Grid Layout */
-.center-discard-pile {
+/* ===== Discard Rivers (4 per player, real mahjong layout) ===== */
+.discard-rivers {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 340px;
-    /* Increased */
-    height: 240px;
-    /* Increased */
-    z-index: 2;
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    grid-auto-rows: 44px;
-    gap: 4px;
-    justify-content: center;
-    align-content: center;
+    width: 480px;
+    height: 300px;
+    z-index: 3;
     pointer-events: none;
 }
 
-.center-pile-tile {
-    position: relative !important;
-    top: auto !important;
-    left: auto !important;
-    transform: none !important;
-    width: 36px !important;
-    /* Larger discard tiles */
-    height: 48px !important;
-    margin: 0 auto;
-    box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.2) !important;
+.discard-river {
+    position: absolute;
+    display: grid;
+    gap: 2px;
+    pointer-events: auto;
+}
+
+/* Bottom River (Player 0 - self): 6 columns, rows grow upward */
+.river-bottom {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    grid-template-columns: repeat(6, 34px);
+    grid-auto-rows: 42px;
+}
+
+/* Top River (Player 2 - opposite): 6 columns, compensate for perspective */
+.river-top {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    grid-template-columns: repeat(6, 38px);
+    grid-auto-rows: 46px;
+    direction: rtl;
+}
+
+/* Right River (Player 1): 4 columns */
+.river-right {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    grid-template-columns: repeat(4, 34px);
+    grid-auto-rows: 42px;
+}
+
+/* Left River (Player 3): 4 columns */
+.river-left {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    grid-template-columns: repeat(4, 34px);
+    grid-auto-rows: 42px;
+    direction: rtl;
+}
+
+.river-tile {
+    width: 34px !important;
+    height: 42px !important;
+    font-size: 20px !important;
+    border-radius: 4px !important;
+    /* 3-layer bottom thickness (6px) — proportional to smaller size */
+    box-shadow:
+        0 2px 0 #D0D0D0,
+        0 4px 0 #BEBEBE,
+        0 6px 0 #A0A0A0,
+        0 7px 4px rgba(0, 0, 0, 0.35),
+        0 10px 8px rgba(0, 0, 0, 0.12),
+        1px 2px 0 #C0C0C0,
+        1px 4px 0 #A0A0A0,
+        inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid #B8B8B8 !important;
+    border-bottom: 2px solid #888888 !important;
+    border-right: 1px solid #A8A8A8 !important;
+    cursor: default !important;
+    direction: ltr;
+    padding: 0 !important;
+    line-height: 1.1 !important;
+}
+
+/* Larger tiles for top river to compensate for perspective shrink */
+.river-top .river-tile {
+    width: 38px !important;
+    height: 46px !important;
+    font-size: 22px !important;
+}
+
+/* Directional shadows for river tiles based on overhead light source */
+/* Right river: shadow falls LEFT */
+.river-right .river-tile {
+    box-shadow:
+        -1px 2px 0 #D0D0D0,
+        -2px 4px 0 #BEBEBE,
+        -3px 6px 0 #A0A0A0,
+        -3px 7px 4px rgba(0, 0, 0, 0.35),
+        -4px 10px 8px rgba(0, 0, 0, 0.12),
+        inset 1px 0 0 rgba(255, 255, 255, 0.85) !important;
+    border-left: 2px solid #888888 !important;
+    border-right: 1px solid #D0D0D0 !important;
+}
+
+/* Left river: shadow falls RIGHT */
+.river-left .river-tile {
+    box-shadow:
+        1px 2px 0 #D0D0D0,
+        2px 4px 0 #BEBEBE,
+        3px 6px 0 #A0A0A0,
+        3px 7px 4px rgba(0, 0, 0, 0.35),
+        4px 10px 8px rgba(0, 0, 0, 0.12),
+        inset -1px 0 0 rgba(255, 255, 255, 0.85) !important;
+    border-right: 2px solid #888888 !important;
+    border-left: 1px solid #D0D0D0 !important;
+}
+
+.river-tile:hover {
+    transform: translateY(-2px) scale(1.08) !important;
+    box-shadow: 0 4px 0 #B0B0B0, 0 5px 6px rgba(0, 0, 0, 0.3) !important;
+    z-index: 10;
+}
+
+.river-tile.last-discard {
+    border: 2px solid #F59E0B !important;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6) !important;
+    animation: lastDiscardPulse 1s ease-in-out infinite;
+}
+
+@keyframes lastDiscardPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.4) !important; }
+    50% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.8) !important; }
 }
 
 /* 4 wall sides positioned as a square */
@@ -1241,34 +1525,89 @@ button#analyze-btn:hover {
 
 /* Individual tile brick in the wall */
 .wall-brick {
-    background: linear-gradient(135deg, #10B981, #059669);
+    background: linear-gradient(160deg, #4ADE80, #34D399 30%, #059669 100%);
     border: 1px solid #047857;
-    border-radius: 2px;
-    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.15);
+    border-top: 1px solid #5DE8A8;
+    border-bottom: 2px solid #04503A;
+    border-radius: 3px;
+    /* 2-layer bottom thickness (4px) — proportional to tiny size */
+    box-shadow:
+        0 2px 0 #047857,
+        0 4px 0 #065F46,
+        0 5px 3px rgba(0, 0, 0, 0.3),
+        0 7px 5px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
     transition: box-shadow 0.3s;
 }
 
 .wall-side-top .wall-brick,
 .wall-side-bottom .wall-brick {
-    width: 20px;
-    /* Larger bricks */
-    height: 28px;
+    width: 18px;
+    height: 24px;
 }
 
 .wall-side-left .wall-brick,
 .wall-side-right .wall-brick {
-    width: 28px;
-    height: 20px;
+    width: 24px;
+    height: 18px;
+}
+
+/* Directional shadows per wall side — overhead light source */
+/* Top wall: shadow falls down */
+.wall-side-top .wall-brick {
+    border-top: 1px solid #6AEDB8;
+    box-shadow:
+        0 2px 0 #047857,
+        0 4px 0 #065F46,
+        0 5px 3px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Bottom wall: shadow falls down (same as top, consistent overhead) */
+.wall-side-bottom .wall-brick {
+    border-top: 1px solid #6AEDB8;
+    box-shadow:
+        0 2px 0 #047857,
+        0 4px 0 #065F46,
+        0 5px 3px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Right wall: shadow falls LEFT */
+.wall-side-right .wall-brick {
+    border-right: 1px solid #6AEDB8;
+    border-left: 2px solid #04503A;
+    border-bottom: 1px solid #047857;
+    box-shadow:
+        -2px 1px 0 #047857,
+        -4px 2px 0 #065F46,
+        -5px 3px 3px rgba(0, 0, 0, 0.3),
+        inset 1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Left wall: shadow falls RIGHT */
+.wall-side-left .wall-brick {
+    border-left: 1px solid #6AEDB8;
+    border-right: 2px solid #04503A;
+    border-bottom: 1px solid #047857;
+    box-shadow:
+        2px 1px 0 #047857,
+        4px 2px 0 #065F46,
+        5px 3px 3px rgba(0, 0, 0, 0.3),
+        inset -1px 0 0 rgba(255, 255, 255, 0.2);
 }
 
 .wall-side-top .wall-brick.double,
 .wall-side-bottom .wall-brick.double {
-    box-shadow: 0 2px 0 #047857, 1px 3px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 0 #047857, 0 4px 0 #065F46, 0 5px 4px rgba(0, 0, 0, 0.3);
 }
 
-.wall-side-left .wall-brick.double,
 .wall-side-right .wall-brick.double {
-    box-shadow: 2px 0 0 #047857, 3px 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: -2px 1px 0 #047857, -4px 2px 0 #065F46, -5px 3px 4px rgba(0, 0, 0, 0.3);
+}
+
+.wall-side-left .wall-brick.double {
+    box-shadow: 2px 1px 0 #047857, 4px 2px 0 #065F46, 5px 3px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* Empty wall brick (tile already drawn) */
@@ -1335,25 +1674,25 @@ button#analyze-btn:hover {
     border: 1px solid #ddd;
 }
 
-/* Mahjong Table Container (Fixed Size for Scaling) */
+/* Mahjong Table Container (2.5D Trapezoid) */
 .mahjong-table-container {
-    width: 800px;
-    height: 800px;
+    width: 1000px;
+    height: 650px;
     background-color: #047857;
-    border-radius: 40px;
+    border-radius: 12px 12px 24px 24px;
     position: relative;
     margin: 10px auto;
-    /* Centered horizontally */
-    transform-origin: top center;
-    /* Scale from top */
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3), inset 0 0 60px rgba(0, 0, 0, 0.2);
-    border: 8px solid #065F46;
+    transform-origin: 50% 55%;
+    transform: rotateX(35deg);
+    transform-style: preserve-3d;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5), inset 0 0 80px rgba(0, 0, 0, 0.25), 0 0 0 3px rgba(167, 243, 208, 0.2);
+    border: 10px solid #065F46;
 }
 
 /* Wall scales with table */
 .tile-wall {
-    width: 58%;
-    height: 58%;
+    width: 52%;
+    height: 52%;
     /* Keep centering */
     top: 50%;
     left: 50%;
@@ -1403,11 +1742,238 @@ button#analyze-btn:hover {
     position: relative;
     justify-content: center;
     background: transparent;
-    /* No background to avoid box look */
     box-shadow: none;
-    /* remove shadow if any */
     border: none;
     padding: 10px 0;
+}
+
+/* ========================================
+   FULLSCREEN GAME MODE
+   ======================================== */
+body.fullscreen-game {
+    overflow: hidden;
+    background: #064E3B;
+}
+
+body.fullscreen-game .background-shapes,
+body.fullscreen-game header,
+body.fullscreen-game .tabs,
+body.fullscreen-game .scoreboard,
+body.fullscreen-game #tab-patterns,
+body.fullscreen-game #tab-strategy,
+body.fullscreen-game footer {
+    display: none !important;
+}
+
+body.fullscreen-game .app-container {
+    padding: 0;
+    max-width: 100%;
+}
+
+body.fullscreen-game #tab-game {
+    display: block !important;
+    padding: 0;
+    margin: 0;
+}
+
+body.fullscreen-game .game-table {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    perspective: 700px;
+    perspective-origin: 50% 42%;
+}
+
+body.fullscreen-game .mahjong-table-container {
+    position: absolute;
+    top: 44%;
+    left: 47%;
+    transform: rotateX(35deg) translate(-50%, -55%);
+    transform-origin: 0 0;
+    margin: 0;
+}
+
+/* Opponent info panels - flat overlay outside 3D perspective */
+body.fullscreen-game .opponent-info-overlay {
+    position: fixed;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+body.fullscreen-game .opponent-info-overlay .opp-name {
+    font-size: 1.3rem;
+}
+
+body.fullscreen-game .opponent-info-overlay .opp-wind {
+    background: rgba(245, 158, 11, 0.3);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border-radius: 8px;
+    padding: 3px 10px;
+    font-size: 1.1rem;
+    color: #FCD34D;
+}
+
+body.fullscreen-game .opponent-info-overlay .opp-tiles {
+    font-size: 1.1rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+body.fullscreen-game .opponent-info-overlay .opp-melds {
+    display: flex;
+    gap: 6px;
+    font-size: 1.0rem;
+    color: rgba(167, 243, 208, 0.8);
+}
+
+/* Position the 3 opponent overlays */
+body.fullscreen-game #opp-info-top {
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+body.fullscreen-game #opp-info-left {
+    left: 6px;
+    top: 42%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+}
+
+body.fullscreen-game #opp-info-right {
+    right: 6px;
+    top: 42%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+}
+
+body.fullscreen-game .bottom-player {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    z-index: 100;
+    padding: 0 10px 5px;
+}
+
+body.fullscreen-game .bottom-player .hand-display {
+    border-radius: 16px 16px 0 0;
+    padding: 10px 12px 8px;
+}
+
+body.fullscreen-game .bottom-player .hand-display .tile {
+    flex: 0 1 var(--dynamic-tile-w, 58px);
+    min-width: 38px;
+    height: 78px;
+    font-size: 40px;
+}
+
+/* Fullscreen controls bar - floats at bottom-left */
+body.fullscreen-game .game-controls-bar {
+    position: fixed;
+    bottom: 8px;
+    left: 8px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+body.fullscreen-game .game-controls-bar .btn {
+    font-size: 0.75rem;
+    padding: 5px 10px;
+}
+
+body.fullscreen-game .game-controls-bar .speed-selector {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+body.fullscreen-game .game-controls-bar .speed-selector select {
+    font-size: 0.7rem;
+    padding: 2px 4px;
+}
+
+/* Action bar - fixed overlay in fullscreen */
+body.fullscreen-game .action-bar {
+    bottom: 170px;
+    z-index: 9000;
+}
+
+/* Drawn tile preview - already fixed, ensure it works in fullscreen */
+body.fullscreen-game .drawn-tile-preview {
+    position: fixed;
+    z-index: 400;
+}
+
+/* Toast in fullscreen */
+body.fullscreen-game .toast-container {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 500;
+}
+
+/* Info panel - already fixed via .floating-info-panel */
+
+/* Rule message in fullscreen */
+body.fullscreen-game .rule-message {
+    position: fixed;
+    bottom: 130px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 250;
+}
+
+/* Exit fullscreen button */
+.exit-fullscreen-btn {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 600;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: none;
+}
+
+.exit-fullscreen-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+body.fullscreen-game .exit-fullscreen-btn {
+    display: block;
 }
 
 /* Win Modal Styles */
@@ -1482,18 +2048,77 @@ button#analyze-btn:hover {
 
 /* --- Action Bar (Chi/Pong/Pass) --- */
 .action-bar {
+    position: fixed;
+    bottom: 170px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9000;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 15px;
-    padding: 16px 24px;
+    gap: 8px;
+    padding: 14px 20px;
     background: linear-gradient(135deg, #FEF3C7, #FDE68A);
     border-radius: 16px;
-    margin: 12px 0;
-    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15);
+    min-width: 280px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     border: 2px solid #F59E0B;
     animation: slideUp 0.3s ease;
     flex-wrap: wrap;
+    pointer-events: auto;
+}
+
+/* Chi Combo Selector */
+.chi-combo-selector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    width: 100%;
+}
+
+.chi-combo-selector.hidden {
+    display: none;
+}
+
+.chi-combo-label {
+    font-weight: bold;
+    color: #92400E;
+    font-size: 0.9rem;
+}
+
+.chi-combo-options {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.chi-combo-option {
+    display: flex;
+    gap: 3px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 2px solid #D1D5DB;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.chi-combo-option:hover {
+    border-color: #3B82F6;
+    background: rgba(59, 130, 246, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
+}
+
+.chi-combo-option .tile {
+    width: 36px !important;
+    height: 48px !important;
+    font-size: 22px !important;
+    cursor: pointer !important;
 }
 
 .action-bar.hidden {
@@ -2081,6 +2706,28 @@ button#analyze-btn:hover {
     transform: translateX(20px);
 }
 
+/* Select-row variant for dropdowns inside modal */
+.toggle-row.select-row {
+    cursor: default;
+}
+
+.inline-select {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 2px solid #059669;
+    background: white;
+    color: #1F2937;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+}
+
+.inline-select:focus {
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.25);
+}
+
 /* ===== Tutorial Highlight ===== */
 .wall-highlight {
     outline: 3px solid #F59E0B !important;
@@ -2131,4 +2778,527 @@ button#analyze-btn:hover {
         opacity: 1;
         transform: translate(-50%, -50%);
     }
+}
+
+/* ===== Active Player Turn Indicator ===== */
+.player-area.active-player .player-label {
+    background: linear-gradient(135deg, #F59E0B, #D97706) !important;
+    color: #fff !important;
+    animation: activePlayerPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes activePlayerPulse {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 22px rgba(245, 158, 11, 0.8), 0 0 40px rgba(245, 158, 11, 0.3);
+    }
+}
+
+.turn-arrow {
+    position: absolute;
+    font-size: 1.4rem;
+    color: #F59E0B;
+    z-index: 100;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+    pointer-events: none;
+    animation: turnArrowBounce 0.8s ease-in-out infinite;
+}
+
+.bottom-player .turn-arrow {
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.top-player .turn-arrow {
+    bottom: -28px;
+    left: 50%;
+    transform: translateX(-50%) rotate(180deg);
+}
+
+.left-player .turn-arrow {
+    right: -28px;
+    top: 50%;
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.right-player .turn-arrow {
+    left: -28px;
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+}
+
+@keyframes turnArrowBounce {
+    0%, 100% { opacity: 1; transform-origin: center; }
+    50% { opacity: 0.4; }
+}
+
+/* ===== Center Info Panel - Compass Rose (compact) ===== */
+.center-info-panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;  /* Below tile-wall(5) and discard-rivers(3) */
+    pointer-events: none;
+}
+
+.compass-rose {
+    width: 152px;
+    height: 152px;
+    background: rgba(0, 0, 0, 0.65);
+    border-radius: 50%;
+    position: relative;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(6px);
+}
+
+.compass-wind {
+    position: absolute;
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.35);
+    width: 32px;
+    text-align: center;
+    transition: color 0.3s, text-shadow 0.3s;
+}
+
+.compass-wind.north {
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.compass-wind.south {
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.compass-wind.east {
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.compass-wind.west {
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.compass-wind.active {
+    color: #F59E0B;
+    font-size: 1.5rem;
+    text-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+}
+
+.compass-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: white;
+}
+
+.round-name {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #A7F3D0;
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+
+.remain-tiles {
+    font-size: 1.0rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* ========================================
+   HAMBURGER MENU
+   ======================================== */
+/* Bottom-left icon buttons */
+.ctrl-icon-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(8px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.15s;
+    padding: 0;
+}
+
+.ctrl-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    transform: scale(1.1);
+}
+
+/* ========================================
+   CENTERED MODAL PANELS (Settings & Help)
+   ======================================== */
+.game-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.25s ease;
+}
+
+.game-modal-overlay.hidden {
+    display: none;
+}
+
+.game-modal-box {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    width: 400px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalPop 0.2s ease-out;
+}
+
+.game-modal-box.game-modal-lg {
+    width: 880px;
+}
+
+@keyframes modalPop {
+    from { transform: scale(0.92); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+
+.game-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: var(--primary-color);
+    color: white;
+}
+
+.game-modal-header h3 {
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.game-modal-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.game-modal-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.game-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 18px;
+}
+
+.game-modal-body.no-pad {
+    padding: 0;
+}
+
+.hmenu-scroll {
+    overflow-y: auto;
+    max-height: calc(80vh - 110px);
+    padding: 0;
+}
+
+/* Hmenu tabs (card-style tab switches in help panel) */
+.hmenu-tabs {
+    display: flex;
+    gap: 0;
+    padding: 12px 12px 0;
+    background: #F3F4F6;
+    border-bottom: 2px solid #E5E7EB;
+}
+
+.hmenu-tab {
+    flex: 1;
+    padding: 10px 12px;
+    border: 2px solid transparent;
+    border-bottom: none;
+    background: #E5E7EB;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #6B7280;
+    cursor: pointer;
+    border-radius: 10px 10px 0 0;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+    position: relative;
+    box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.hmenu-tab:hover {
+    background: #F9FAFB;
+    color: #374151;
+}
+
+.hmenu-tab.active {
+    background: #FFFFFF;
+    color: var(--primary-color);
+    border-color: #E5E7EB;
+    border-bottom-color: #FFFFFF;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+    z-index: 1;
+}
+
+.hmenu-content {
+    display: none;
+    padding: 12px 14px;
+}
+
+.hmenu-content.active {
+    display: block;
+}
+
+/* ===== Avatar Settings ===== */
+.setting-section-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #374151;
+    margin: 16px 0 8px;
+    border-top: 1px solid #E5E7EB;
+    padding-top: 12px;
+}
+
+.avatar-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: rgba(5, 150, 105, 0.06);
+    border-radius: 10px;
+}
+
+.avatar-row span {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #374151;
+    min-width: 36px;
+}
+
+.avatar-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.player-name-input {
+    width: 100%;
+    padding: 5px 10px;
+    border: 1px solid #D1D5DB;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    background: white;
+    color: #374151;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.player-name-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.15);
+}
+
+.avatar-preview {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--primary-color);
+    flex-shrink: 0;
+}
+
+.avatar-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-upload-btn {
+    margin-left: auto;
+    padding: 4px 10px;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.avatar-upload-btn:hover {
+    background: #047857;
+}
+
+/* ========================================
+   OPPONENT AVATAR in Overlay
+   ======================================== */
+.opp-avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+}
+
+.opp-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.opp-info-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+/* ========================================
+   FLOATING SCOREBOARD (bottom-right, default open)
+   ======================================== */
+.floating-scoreboard {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    z-index: 200;
+}
+
+.fsb-panel {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 13px;
+    padding: 10px;
+    margin-bottom: 8px;
+    min-width: 286px;
+}
+
+.fsb-panel.hidden {
+    display: none;
+}
+
+.fsb-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.91rem;
+    color: white;
+}
+
+.fsb-table th {
+    padding: 4px 8px;
+    text-align: left;
+    color: #A7F3D0;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.fsb-table td {
+    padding: 4px 8px;
+}
+
+.fsb-table .score-value {
+    font-weight: bold;
+    color: #FCD34D;
+    font-size: 1.0rem;
+}
+
+.fsb-table .stat-cell {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.78rem;
+}
+
+/* ========================================
+   LANDSCAPE REMINDER (portrait fallback)
+   ======================================== */
+.landscape-reminder {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #064E3B;
+    color: white;
+    z-index: 99999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.landscape-icon {
+    font-size: 3rem;
+}
+
+@media (orientation: portrait) and (max-width: 768px) {
+    .landscape-reminder {
+        display: flex !important;
+    }
+}
+
+/* ========================================
+   GAME-FIRST LAYOUT OVERRIDES
+   Body always has .fullscreen-game class
+   ======================================== */
+
+/* Controls bar - always floating bottom-left */
+.game-controls-bar {
+    position: fixed !important;
+    bottom: 8px !important;
+    left: 8px !important;
+    z-index: 200 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    padding: 6px !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(8px) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+.game-controls-bar .btn {
+    font-size: 0.75rem !important;
+    padding: 5px 10px !important;
 }

@@ -1,12 +1,14 @@
 // app.js - UI Logic for Taiwanese Mahjong Master
-// Handles: Tabs, Tile Rendering, Pattern Display, Control Wiring
+// Game-first mode: always fullscreen horizontal layout
 // Game logic is in game.js
 
 document.addEventListener('DOMContentLoaded', () => {
-    initTabs();
     renderTileOverview();
     renderPatterns();
     initGameControls();
+    initPanels();
+    initAvatarUpload();
+    initPlayerNames();
     MahjongGame.initScoringUI();
 });
 
@@ -39,20 +41,6 @@ function renderTileOverview() {
         });
         card.appendChild(tilesRow);
         container.appendChild(card);
-    });
-}
-
-// --- Tab Logic ---
-function initTabs() {
-    const tabs = document.querySelectorAll('.tabs .tab-btn');
-    const contents = document.querySelectorAll('.tab-content');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            contents.forEach(c => c.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
-        });
     });
 }
 
@@ -100,7 +88,14 @@ function renderPatterns() {
             const handDiv = document.createElement('div');
             handDiv.className = 'hand-display';
             pattern.example.forEach(tileId => {
-                handDiv.appendChild(createTileElement(tileId));
+                if (tileId === '+') {
+                    const sep = document.createElement('span');
+                    sep.className = 'meld-separator';
+                    sep.textContent = '+';
+                    handDiv.appendChild(sep);
+                } else {
+                    handDiv.appendChild(createTileElement(tileId));
+                }
             });
             exampleDiv.appendChild(handDiv);
             card.appendChild(exampleDiv);
@@ -151,57 +146,198 @@ function createTileElement(id) {
             flowerImg.draggable = false;
             el.appendChild(flowerImg);
         }
-
     }
     return el;
 }
 
-// --- Responsive Layout: Scale to Fit ---
+// --- Responsive Layout: Scale to Fit (2.5D table, absolute position) ---
 function resizeTable() {
     const table = document.querySelector('.mahjong-table-container');
     if (!table) return;
 
-    const baseWidth = 800;
-    const baseHeight = 800;
+    const baseWidth = 1000;
+    const baseHeight = 650;
 
-    // Measure available width from parent container
-    const gameTable = document.getElementById('game-table');
-    const availableW = (gameTable ? gameTable.clientWidth : window.innerWidth) - 16;
+    const bottomReserve = 120; // reserve space for hand area
+    const availableW = window.innerWidth - 16;
+    const availableH = window.innerHeight - bottomReserve;
 
-    // Only subtract elements ABOVE the table (header + tabs) for height calc
-    const header = document.querySelector('header');
-    const tabs = document.querySelector('.tabs');
-    let aboveHeight = 0;
-    if (header) aboveHeight += header.offsetHeight;
-    if (tabs) aboveHeight += tabs.offsetHeight;
-    aboveHeight += 20; // margin buffer
+    let scale = Math.min(availableW / baseWidth, availableH / baseHeight);
+    scale = Math.max(Math.min(scale, 1.15), 0.5);
 
-    const availableH = window.innerHeight - aboveHeight;
+    // Use absolute positioning: table is centered via CSS translate(-50%, -55%)
+    // We only need to set the scale here; 28deg for stronger trapezoid effect
+    table.style.transform = `rotateX(35deg) translate(-50%, -55%) scale(${scale})`;
+    window._tableScale = scale;
 
-    // Device-aware scaling strategy
-    let scale;
-    if (window.innerWidth > 768) {
-        // Desktop: prioritize width, allow scrolling for content below
-        scale = Math.min(availableW / baseWidth, availableH / baseHeight, 1.0);
-        scale = Math.max(scale, 0.55); // desktop minimum
-    } else {
-        // Mobile: fit width, allow vertical scroll
-        scale = Math.min(availableW / baseWidth, 0.95);
-        scale = Math.max(scale, 0.35); // mobile minimum
+    // Dynamically adjust hand tile width
+    const bp = document.querySelector('.bottom-player .hand-display');
+    if (bp) {
+        const tileCount = bp.querySelectorAll('.tile').length || 16;
+        const maxHandWidth = window.innerWidth - 150;
+        const tileWidth = Math.min(62, Math.floor(maxHandWidth / tileCount) - 4);
+        bp.style.setProperty('--dynamic-tile-w', tileWidth + 'px');
+    }
+}
+
+// No-ops (game-first mode, body always has fullscreen-game class)
+function enterFullscreenGame() { resizeTable(); }
+function exitFullscreenGame() {}
+
+// --- Settings & Help Modals (centered overlay) ---
+function initPanels() {
+    const settingsPanel = document.getElementById('settings-panel');
+    const helpPanel = document.getElementById('help-panel');
+    const settingsBtn = document.getElementById('settings-btn');
+    const helpBtn = document.getElementById('help-btn');
+    const settingsClose = document.getElementById('settings-close');
+    const helpClose = document.getElementById('help-close');
+
+    function openModal(overlay) {
+        // Close any open modal first
+        settingsPanel.classList.add('hidden');
+        helpPanel.classList.add('hidden');
+        overlay.classList.remove('hidden');
     }
 
-    // Apply scale
-    table.style.transform = `scale(${scale})`;
+    function closeAll() {
+        settingsPanel.classList.add('hidden');
+        helpPanel.classList.add('hidden');
+    }
 
-    // Compensate margin so document flow reflects scaled size
-    const effectiveHeight = baseHeight * scale;
-    const gap = baseHeight - effectiveHeight;
-    table.style.marginBottom = `-${gap}px`;
+    if (settingsBtn) settingsBtn.addEventListener('click', () => openModal(settingsPanel));
+    if (helpBtn) helpBtn.addEventListener('click', () => openModal(helpPanel));
+    if (settingsClose) settingsClose.addEventListener('click', closeAll);
+    if (helpClose) helpClose.addEventListener('click', closeAll);
+
+    // Click on overlay backdrop (outside modal box) to close
+    [settingsPanel, helpPanel].forEach(overlay => {
+        if (overlay) {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeAll();
+            });
+        }
+    });
+
+    // Tab switching inside help panel
+    if (helpPanel) {
+        const tabs = helpPanel.querySelectorAll('.hmenu-tab');
+        const contents = helpPanel.querySelectorAll('.hmenu-content');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                contents.forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                const target = document.getElementById(tab.dataset.target);
+                if (target) target.classList.add('active');
+            });
+        });
+    }
+}
+
+// --- Avatar Upload ---
+function initAvatarUpload() {
+    const inputs = document.querySelectorAll('.avatar-input');
+    inputs.forEach(input => {
+        input.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const playerId = input.dataset.player;
+            const reader = new FileReader();
+            reader.onload = function (ev) {
+                const dataUrl = ev.target.result;
+                // Update preview in settings
+                const preview = document.getElementById(`avatar-preview-${playerId}`);
+                if (preview) preview.innerHTML = `<img src="${dataUrl}" alt="Player ${playerId}">`;
+                // Update in-game overlay avatar
+                const oppAvatar = document.getElementById(`opp-avatar-${playerId}`);
+                if (oppAvatar) oppAvatar.innerHTML = `<img src="${dataUrl}" alt="Player ${playerId}">`;
+                // Save to localStorage
+                localStorage.setItem(`mahjong_avatar_${playerId}`, dataUrl);
+            };
+            reader.readAsDataURL(file);
+        });
+    });
+
+    // Load saved avatars on init (0=self, 1-3=opponents)
+    [0, 1, 2, 3].forEach(pId => {
+        const saved = localStorage.getItem(`mahjong_avatar_${pId}`);
+        if (saved) {
+            const preview = document.getElementById(`avatar-preview-${pId}`);
+            if (preview) preview.innerHTML = `<img src="${saved}" alt="Player ${pId}">`;
+            const oppAvatar = document.getElementById(`opp-avatar-${pId}`);
+            if (oppAvatar) oppAvatar.innerHTML = `<img src="${saved}" alt="Player ${pId}">`;
+        }
+    });
+}
+
+function initPlayerNames() {
+    const defaultNames = ['自己', '下家', '對家', '上家'];
+
+    // Load saved names into input fields
+    [0, 1, 2, 3].forEach(pId => {
+        const savedName = localStorage.getItem(`mahjong_player_name_${pId}`);
+        const input = document.getElementById(`player-name-${pId}`);
+        if (input && savedName) {
+            input.value = savedName;
+        }
+    });
+
+    // Apply saved names to UI elements
+    applyPlayerNames();
+}
+
+function applyPlayerNames() {
+    const defaultNames = ['自己', '下家', '對家', '上家'];
+
+    [0, 1, 2, 3].forEach(pId => {
+        const savedName = localStorage.getItem(`mahjong_player_name_${pId}`) || defaultNames[pId];
+
+        // Update opponent overlay names (players 1-3)
+        if (pId > 0) {
+            const oppNameEl = document.querySelector(`#opp-info-${pId === 1 ? 'right' : pId === 2 ? 'top' : 'left'} .opp-name`);
+            if (oppNameEl) oppNameEl.textContent = savedName;
+        }
+
+        // Update bottom player label (player 0)
+        if (pId === 0) {
+            const bottomLabel = document.querySelector('.bottom-label');
+            if (bottomLabel) {
+                const windSpan = bottomLabel.querySelector('.wind-badge');
+                const windText = windSpan ? windSpan.outerHTML : '';
+                bottomLabel.innerHTML = `${savedName} ${windText}`;
+            }
+        }
+
+        // Update scoreboard names
+        const scoreRow = document.querySelector(`#score-${pId}`)?.closest('tr');
+        if (scoreRow) {
+            const nameCell = scoreRow.querySelector('td:first-child');
+            if (nameCell) nameCell.textContent = savedName;
+        }
+    });
+}
+
+function savePlayerNames() {
+    const defaultNames = ['自己', '下家', '對家', '上家'];
+
+    [0, 1, 2, 3].forEach(pId => {
+        const input = document.getElementById(`player-name-${pId}`);
+        if (input) {
+            const name = input.value.trim() || defaultNames[pId];
+            localStorage.setItem(`mahjong_player_name_${pId}`, name);
+        }
+    });
+
+    // Also update PLAYER_NAMES in game engine if available
+    if (window.MahjongGame && typeof window.MahjongGame.updatePlayerNames === 'function') {
+        window.MahjongGame.updatePlayerNames();
+    }
+
+    applyPlayerNames();
 }
 
 window.addEventListener('resize', resizeTable);
-// Use multiple events to ensure it runs
 window.addEventListener('load', resizeTable);
 document.addEventListener('DOMContentLoaded', resizeTable);
-// Run shortly after render (game start)
 setTimeout(resizeTable, 100);

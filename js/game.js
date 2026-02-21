@@ -5,7 +5,11 @@
 
 const MahjongGame = (() => {
     // --- Constants ---
-    const PLAYER_NAMES = ['自己', '🅐 下家', '🅒 對家', '🅑 上家'];
+    const DEFAULT_PLAYER_NAMES = ['自己', '下家', '對家', '上家'];
+    let PLAYER_NAMES = DEFAULT_PLAYER_NAMES.map((def, i) => {
+        const saved = localStorage.getItem(`mahjong_player_name_${i}`);
+        return saved || def;
+    });
     const WIND_CHARS = ['東', '南', '西', '北'];
     const DIRECTION_CLASSES = ['d-east', 'd-south', 'd-west', 'd-north'];
     const PLAYER_COLORS = ['#F59E0B', '#3B82F6', '#EF4444', '#10B981'];
@@ -21,10 +25,11 @@ const MahjongGame = (() => {
         handCount: 0,
         lastDiscard: null,
         lastDiscardPlayer: -1,
-        aiSpeed: 5000,
+        aiSpeed: 3000,
         waitingForAction: false,
         diceResult: [0, 0, 0],
         centerDiscards: [],
+        playerDiscards: [[], [], [], []],
         dealing: false,
         userCanDraw: false, // Is wall clickable for user to draw?
         tutorialMode: true,
@@ -115,7 +120,7 @@ const MahjongGame = (() => {
 
     function defaultScoring() {
         return {
-            settings: { base: 100, perTai: 100, difficulty: 'normal' },
+            settings: { base: 100, perTai: 100 },
             scores: [0, 0, 0, 0],
             stats: [
                 { hu: 0, zimo: 0, fangqiang: 0 },
@@ -198,8 +203,12 @@ const MahjongGame = (() => {
     }
 
     // --- Chi / Pong ---
-    function canChi(playerHand, discardedTile, discardPlayer) {
-        if (discardPlayer !== 3) return { valid: false, combos: [] };
+    function canChi(playerHand, discardedTile, discardPlayer, callerPlayer) {
+        // callerPlayer defaults to 0 (user) for backward compatibility
+        if (callerPlayer === undefined) callerPlayer = 0;
+        // Can only chi from previous player (上家)
+        const previousPlayer = (callerPlayer + 3) % 4;
+        if (discardPlayer !== previousPlayer) return { valid: false, combos: [] };
         const suit = getSuit(discardedTile);
         if (!suit) return { valid: false, combos: [] };
         const num = getNumber(discardedTile);
@@ -217,17 +226,109 @@ const MahjongGame = (() => {
         return { valid: playerHand.filter(t => t === discardedTile).length >= 2 };
     }
 
-    // --- AI ---
-    function aiChooseDiscard(hand) {
-        // AI Difficulty Check
-        const difficulty = (scoring && scoring.settings && scoring.settings.difficulty) || 'normal';
+    // --- AI Decision Functions ---
+    function aiShouldPong(hand, tile) {
+        // Always pong honor tiles (wind/dragon) - they contribute to winning patterns
+        const isHonor = ['dong', 'nan', 'xi', 'bei', 'zhong', 'fa', 'bai'].includes(tile);
+        if (isHonor) return true;
+        // For number tiles, pong if it doesn't break existing sequences
+        return true;
+    }
 
-        if (difficulty === 'easy') {
-            // Easy: Completely random discard
-            return Math.floor(Math.random() * hand.length);
+    function aiShouldChi(hand, combo) {
+        // Always chi - actively build sequences
+        return true;
+    }
+
+    // --- AI Execute Pong ---
+    function executeAIPong(playerId, tile) {
+        const hand = state.players[playerId].hand;
+        let removed = 0;
+        for (let i = hand.length - 1; i >= 0 && removed < 2; i--) {
+            if (hand[i] === tile) { hand.splice(i, 1); removed++; }
+        }
+        state.players[playerId].melds.push({ type: 'pong', tiles: [tile, tile, tile] });
+        // Remove from discard rivers
+        if (state.centerDiscards.length > 0) state.centerDiscards.pop();
+        if (state.playerDiscards && state.playerDiscards[state.lastDiscardPlayer]) {
+            state.playerDiscards[state.lastDiscardPlayer].pop();
         }
 
-        // Normal/Hard: Use heuristic (Hard could be improved later)
+        showToast(`${PLAYER_NAMES[playerId]} 碰！${getTileDisplay(tile)}`, 1500);
+
+        state.currentPlayer = playerId;
+        state.waitingForAction = false;
+        updateTurnIndicator(playerId);
+        renderAll();
+        renderDiscardRivers();
+
+        // AI discards a tile after pong
+        setTimeout(() => {
+            if (!state.active) return;
+            const discardIdx = aiChooseDiscard(state.players[playerId].hand);
+            if (discardIdx < 0 || discardIdx >= state.players[playerId].hand.length) return;
+            const discardedTile = state.players[playerId].hand.splice(discardIdx, 1)[0];
+            state.lastDiscard = discardedTile;
+            state.lastDiscardPlayer = playerId;
+            addToCenterPile(discardedTile, playerId);
+            renderAll();
+            renderDiscardRivers();
+            updateInfoPanel(`${PLAYER_NAMES[playerId]} 打出 ${getTileDisplay(discardedTile)}`);
+
+            setTimeout(() => {
+                if (!state.active) return;
+                const actionFound = checkDiscardActions(discardedTile, playerId);
+                if (!actionFound) nextTurn();
+            }, 500);
+        }, state.aiSpeed * 0.5);
+    }
+
+    // --- AI Execute Chi ---
+    function executeAIChi(playerId, combo, discardedTile) {
+        const hand = state.players[playerId].hand;
+        combo.filter(t => t !== discardedTile).forEach(t => {
+            const idx = hand.indexOf(t);
+            if (idx !== -1) hand.splice(idx, 1);
+        });
+        state.players[playerId].melds.push({ type: 'chi', tiles: combo });
+        // Remove from discard rivers
+        if (state.centerDiscards.length > 0) state.centerDiscards.pop();
+        if (state.playerDiscards && state.playerDiscards[state.lastDiscardPlayer]) {
+            state.playerDiscards[state.lastDiscardPlayer].pop();
+        }
+
+        showToast(`${PLAYER_NAMES[playerId]} 吃！`, 1500);
+
+        state.currentPlayer = playerId;
+        state.waitingForAction = false;
+        updateTurnIndicator(playerId);
+        renderAll();
+        renderDiscardRivers();
+
+        // AI discards a tile after chi
+        setTimeout(() => {
+            if (!state.active) return;
+            const discardIdx = aiChooseDiscard(state.players[playerId].hand);
+            if (discardIdx < 0 || discardIdx >= state.players[playerId].hand.length) return;
+            const discardedTile2 = state.players[playerId].hand.splice(discardIdx, 1)[0];
+            state.lastDiscard = discardedTile2;
+            state.lastDiscardPlayer = playerId;
+            addToCenterPile(discardedTile2, playerId);
+            renderAll();
+            renderDiscardRivers();
+            updateInfoPanel(`${PLAYER_NAMES[playerId]} 打出 ${getTileDisplay(discardedTile2)}`);
+
+            setTimeout(() => {
+                if (!state.active) return;
+                const actionFound = checkDiscardActions(discardedTile2, playerId);
+                if (!actionFound) nextTurn();
+            }, 500);
+        }, state.aiSpeed * 0.5);
+    }
+
+    // --- AI ---
+    function aiChooseDiscard(hand) {
+        // Always use heuristic strategy
         const sorted = sortTiles(hand);
         const counts = {};
         sorted.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
@@ -293,9 +394,9 @@ const MahjongGame = (() => {
             // Load saved preferences
             const saved = JSON.parse(localStorage.getItem('mahjong_newgame_opts') || '{}');
             const tutorialCb = document.getElementById('opt-tutorial');
-            const speedCb = document.getElementById('opt-speed');
+            const speedSel = document.getElementById('opt-speed');
             if (tutorialCb && saved.tutorial !== undefined) tutorialCb.checked = saved.tutorial;
-            if (speedCb && saved.speed2x !== undefined) speedCb.checked = saved.speed2x;
+            if (speedSel && saved.speedLevel !== undefined) speedSel.value = saved.speedLevel;
 
             modal.classList.remove('hidden');
 
@@ -311,7 +412,7 @@ const MahjongGame = (() => {
             function onStart() {
                 const opts = {
                     tutorial: tutorialCb ? tutorialCb.checked : false,
-                    speed2x: speedCb ? speedCb.checked : false
+                    speedLevel: speedSel ? parseInt(speedSel.value) : 2
                 };
                 localStorage.setItem('mahjong_newgame_opts', JSON.stringify(opts));
                 cleanup();
@@ -333,18 +434,24 @@ const MahjongGame = (() => {
         return sleep(ms * state.speedMultiplier);
     }
 
-    async function startGame() {
-        // Show new game options modal
-        const options = await showNewGameModal();
-        if (!options) return; // User cancelled
+    async function startGame(autoRestart) {
+        if (!autoRestart) {
+            // Show new game options modal only for manual start
+            const options = await showNewGameModal();
+            if (!options) return; // User cancelled
 
-        state.tutorialMode = options.tutorial;
-        state.speedMultiplier = options.speed2x ? 0.5 : 1;
+            state.tutorialMode = options.tutorial;
+            // speedLevel: 1=normal(1x), 2=fast(2x), 3=turbo(3x)
+            const sl = options.speedLevel || 2;
+            state.speedMultiplier = sl >= 3 ? 0.33 : sl >= 2 ? 0.5 : 1;
+            state.aiSpeed = parseInt(document.getElementById('ai-speed').value) || 3000;
+        }
+        // For autoRestart, keep existing tutorialMode, speedMultiplier, aiSpeed
 
-        state.aiSpeed = parseInt(document.getElementById('ai-speed').value) || 5000;
         state.active = false;
         state.dealing = true;
         state.centerDiscards = [];
+        state.playerDiscards = [[], [], [], []];
         state.lastDiscard = null;
         state.lastDiscardPlayer = -1;
         state.waitingForAction = false;
@@ -366,8 +473,6 @@ const MahjongGame = (() => {
         const selfHuBtn = document.getElementById('hu-self-btn');
         if (selfHuBtn) {
             selfHuBtn.onclick = () => {
-                // User clicked "Hu" on self-draw
-                // Winning tile is the last one drawn (at end of hand)
                 const hand = state.players[0].hand;
                 const winningTile = hand[hand.length - 1];
                 declareWin(0, 0, true, null, winningTile);
@@ -392,7 +497,7 @@ const MahjongGame = (() => {
         renderAll();
         updateInfoPanel();
 
-        // Initialize Audio (requires interaction, usually Start Button click)
+        // Initialize Audio
         if (window.AudioManager) AudioManager.init();
 
         // Step 1: Roll 3 dice with animation & education
@@ -415,7 +520,9 @@ const MahjongGame = (() => {
         renderWall();
         updateInfoPanel();
 
-        if (state.tutorialMode) {
+        if (autoRestart) {
+            await showToast(`🀄 新局開始！莊家：${PLAYER_NAMES[state.dealer]}（連${state.lianZhuang}）`, 2000);
+        } else if (state.tutorialMode) {
             await showToast('✅ 準備完成！莊家先出牌，輪到你時可以從牌墩摸牌', 2500 * state.speedMultiplier);
         } else {
             await showToast('抓牌完成！遊戲開始', 1500 * state.speedMultiplier);
@@ -778,6 +885,7 @@ const MahjongGame = (() => {
     function enableUserDraw() {
         state.userCanDraw = true;
         state.currentPlayer = 0;
+        updateTurnIndicator(0);
         startTurnTimer(); // Start thinking timer
         renderWall();
         updateInfoPanel('輪到您，請點擊牌墩摸牌');
@@ -791,11 +899,25 @@ const MahjongGame = (() => {
         drawTileForPlayer(0);
     }
 
-    // --- Drawing ---
+    // --- Drawing (流局/臭莊) ---
     function handleDraw() {
+        if (!state.active) return; // Prevent double-trigger
         state.lianZhuang++;
         state.active = false;
-        showToast(`🔚 流局（臭莊）！莊家 ${PLAYER_NAMES[state.dealer]} 連莊（連 ${state.lianZhuang}）`, 4000);
+        showSelfDrawHuButton(false);
+        hideActionBar();
+
+        const dealerName = PLAYER_NAMES[state.dealer];
+        const lz = state.lianZhuang;
+        showToast(`🔚 流局（臭莊）！莊家 ${dealerName} 連莊（連${lz}），台數 +1`, 4000);
+
+        // Auto start next round after delay
+        setTimeout(() => {
+            showToast(`🔄 自動開始下一局...莊家：${dealerName}（連${lz}）`, 2500);
+            setTimeout(() => {
+                startGame(true); // autoRestart = true, skip modal
+            }, 2500);
+        }, 4500);
     }
 
     function drawTileForPlayer(playerId) {
@@ -876,6 +998,7 @@ const MahjongGame = (() => {
         state.players[state.currentPlayer].guoShui = false;
 
         updateInfoPanel(null, state.currentPlayer);
+        updateTurnIndicator(state.currentPlayer);
 
         if (state.currentPlayer === 0) {
             enableUserDraw();
@@ -887,6 +1010,7 @@ const MahjongGame = (() => {
     function aiTurn(playerId) {
         try {
             if (!state.active || state.waitingForAction) return;
+            updateTurnIndicator(playerId);
 
             if (state.deck.length <= 16) {
                 handleDraw();
@@ -974,94 +1098,129 @@ const MahjongGame = (() => {
         }
     }
 
-    // Check actions after a discard (Hu, Pong, Chi)
+    // Check actions after a discard (Priority: Hu > Pong > Chi)
     function checkDiscardActions(tile, discarderId) {
-        // 1. Check HU (Win) for all other players
-        // Order: Counter-Clockwise from discarder (Head Bump / Jiet Hu priority)
+        // 1. Check HU (Win) for all other players (counter-clockwise from discarder)
         for (let i = 1; i <= 3; i++) {
             const pId = (discarderId + i) % 4;
-            // Check if player can Hu with this tile
-            if (MahjongAlgorithm.canHu(state.players[pId].hand, tile)) {
-                // Guo Shui Check
-                if (state.players[pId].guoShui) {
-                    console.log(`Player ${pId} in Guo Shui, skipping Hu.`);
-                    if (pId === 0) showToast('過水中，無法胡牌', 1500);
-                    // Continue loop (don't break, maybe others can Hu? Jiet Hu needs check)
-                    // If User, we fall through to Chi/Pong check later
-                } else if (pId === 0) {
-                    // User can Hu!
-                    const chiResult = canChi(state.players[0].hand, tile, discarderId);
-                    const pongResult = canPong(state.players[0].hand, tile);
+            try {
+                if (MahjongAlgorithm.canHu(state.players[pId].hand, tile)) {
+                    if (state.players[pId].guoShui) {
+                        if (pId === 0) showToast('過水中，無法胡牌', 1500);
+                        continue;
+                    }
+                    if (pId === 0) {
+                        const chiResult = canChi(state.players[0].hand, tile, discarderId, 0);
+                        const pongResult = canPong(state.players[0].hand, tile);
+                        state.waitingForAction = true;
+                        state.huPossible = true;
+                        showActionBar(tile, discarderId, chiResult, pongResult, true);
+                        showToast('可以胡牌！', 2000);
+                        return true;
+                    } else {
+                        declareWin(pId, 1, false, discarderId, tile);
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.error(`Check Hu Error for player ${pId}:`, e);
+            }
+        }
+
+        // 2. Check PONG for all players (counter-clockwise, pong has priority over chi)
+        for (let i = 1; i <= 3; i++) {
+            const pId = (discarderId + i) % 4;
+            if (pId === discarderId) continue;
+
+            const pongResult = canPong(state.players[pId].hand, tile);
+            if (pongResult.valid) {
+                if (pId === 0) {
+                    // User can pong - also check chi for the action bar
+                    const chiResult = canChi(state.players[0].hand, tile, discarderId, 0);
                     state.waitingForAction = true;
-                    state.huPossible = true; // Mark as possible
-                    showActionBar(tile, discarderId, chiResult, pongResult, true);
-                    showToast('🎉 有機會胡牌！', 2000);
-                    return true; // Wait for user
+                    showActionBar(tile, discarderId, chiResult, pongResult, false);
+                    return true;
                 } else {
-                    // AI can Hu (Ron)
-                    declareWin(pId, 1, false, discarderId, tile);
-                    return true; // Stop turn
+                    // AI pong
+                    if (aiShouldPong(state.players[pId].hand, tile)) {
+                        state.waitingForAction = true;
+                        setTimeout(() => executeAIPong(pId, tile), state.aiSpeed * 0.3);
+                        return true;
+                    }
                 }
             }
         }
 
-        // 2. Check Pong (Any player) - Currently only User
-        // If we want AI to Pong, we'd check here. For now only User.
-        // User is Player 0.
-        if (discarderId !== 0) {
-            const pongResult = canPong(state.players[0].hand, tile);
-            const chiResult = canChi(state.players[0].hand, tile, discarderId);
-
-            if (pongResult.valid || chiResult.valid) {
-                state.waitingForAction = true;
-                showActionBar(tile, discarderId, chiResult, pongResult, false);
-                return true;
-            }
-
-            // Debug hint: explain why chi/pong isn't available when 上家 discards
-            if (discarderId === 3) {
-                const suit = getSuit(tile);
-                if (!suit) {
-                    showToast(`${getTileDisplay(tile)} 是字牌，不能吃`, 1200);
+        // 3. Check CHI - only the next player (下家) can chi
+        const chiPlayer = (discarderId + 1) % 4;
+        if (chiPlayer !== discarderId) {
+            const chiResult = canChi(state.players[chiPlayer].hand, tile, discarderId, chiPlayer);
+            if (chiResult.valid) {
+                if (chiPlayer === 0) {
+                    // User can chi
+                    const pongResult = canPong(state.players[0].hand, tile);
+                    state.waitingForAction = true;
+                    showActionBar(tile, discarderId, chiResult, pongResult, false);
+                    return true;
                 } else {
-                    showToast(`手中沒有能與 ${getTileDisplay(tile)} 組順子的牌`, 1200);
+                    // AI chi
+                    if (aiShouldChi(state.players[chiPlayer].hand, chiResult.combos[0])) {
+                        state.waitingForAction = true;
+                        setTimeout(() => executeAIChi(chiPlayer, chiResult.combos[0], tile), state.aiSpeed * 0.3);
+                        return true;
+                    }
                 }
+            }
+        }
+
+        // 4. If user is next and no action possible from 上家, show debug hint
+        if (discarderId !== 0 && (discarderId + 1) % 4 === 0) {
+            // User's 上家 just discarded but user can't chi
+            const suit = getSuit(tile);
+            if (!suit) {
+                // Honor tile - no chi possible, that's expected
             }
         }
 
         return false;
     }
 
-    // --- Center Discard Pile ---
+    // --- Discard Rivers (per-player) ---
     function addToCenterPile(tile, playerId) {
-        const centerX = 50 + (Math.random() - 0.5) * 30;
-        const centerY = 35 + (Math.random() - 0.5) * 20;
-        const rotation = (Math.random() - 0.5) * 30;
-
         // Play Sound on Discard
         if (window.AudioManager) AudioManager.playClack();
 
-        state.centerDiscards.push({
-            tile, playerId, x: centerX, y: centerY, rotation,
-            id: Date.now() + Math.random()
-        });
-        renderCenterDiscards();
+        // Add to per-player discard river
+        if (!state.playerDiscards) state.playerDiscards = [[], [], [], []];
+        state.playerDiscards[playerId].push({ tile, id: Date.now() + Math.random() });
+
+        // Keep centerDiscards for chi/pong removal compatibility
+        state.centerDiscards.push({ tile, playerId, id: Date.now() });
+        renderDiscardRivers();
     }
 
-    function renderCenterDiscards() {
-        const area = document.getElementById('center-discard-pile');
-        if (!area) return;
-        area.innerHTML = '';
+    function renderDiscardRivers() {
+        for (let p = 0; p < 4; p++) {
+            const river = document.getElementById(`river-${p}`);
+            if (!river) continue;
+            river.innerHTML = '';
+            const discards = state.playerDiscards ? state.playerDiscards[p] : [];
+            discards.forEach((d, idx) => {
+                const el = createTileElement(d.tile);
+                el.className = 'tile river-tile';
+                // Highlight last discarded tile
+                if (p === state.lastDiscardPlayer && idx === discards.length - 1) {
+                    el.classList.add('last-discard');
+                }
+                el.title = `${PLAYER_NAMES[p]} 打出`;
+                river.appendChild(el);
+            });
+        }
+    }
 
-        state.centerDiscards.forEach((d, idx) => {
-            const el = createTileElement(d.tile);
-            el.className = 'tile center-pile-tile';
-            // Grid layout handles position automatically
-            el.style.borderColor = PLAYER_COLORS[d.playerId];
-            el.style.borderWidth = '2px';
-            el.title = `${PLAYER_NAMES[d.playerId]} 打出`;
-            area.appendChild(el);
-        });
+    // Keep old name as alias for any remaining calls
+    function renderCenterDiscards() {
+        renderDiscardRivers();
     }
 
     // --- Chi/Pong ---
@@ -1075,6 +1234,9 @@ const MahjongGame = (() => {
         });
         state.players[0].melds.push({ type: 'chi', tiles: combo });
         if (state.centerDiscards.length > 0) state.centerDiscards.pop();
+        if (state.playerDiscards && state.playerDiscards[state.lastDiscardPlayer]) {
+            state.playerDiscards[state.lastDiscardPlayer].pop();
+        }
 
         state.players[0].hand = sortTiles(state.players[0].hand);
         state.waitingForAction = false;
@@ -1100,6 +1262,9 @@ const MahjongGame = (() => {
         }
         state.players[0].melds.push({ type: 'pong', tiles: [tile, tile, tile] });
         if (state.centerDiscards.length > 0) state.centerDiscards.pop();
+        if (state.playerDiscards && state.playerDiscards[state.lastDiscardPlayer]) {
+            state.playerDiscards[state.lastDiscardPlayer].pop();
+        }
 
         state.players[0].hand = sortTiles(state.players[0].hand);
         state.waitingForAction = false;
@@ -1135,7 +1300,38 @@ const MahjongGame = (() => {
         renderFlowers();
         renderOpponentBacks();
         renderOpponentFlowers();
+        renderOpponentMelds();
         updateTileCount();
+        updateOpponentOverlays();
+    }
+
+    // Update flat opponent info overlays (outside 3D)
+    function updateOpponentOverlays() {
+        if (!document.body.classList.contains('fullscreen-game')) return;
+        [1, 2, 3].forEach(pId => {
+            const windEl = document.getElementById(`opp-wind-${pId}`);
+            const tilesEl = document.getElementById(`opp-tiles-${pId}`);
+            const meldsEl = document.getElementById(`opp-melds-${pId}`);
+            if (!windEl || !state.players[pId]) return;
+
+            // Wind badge
+            const seatWind = (state.dealerIndex !== undefined)
+                ? WIND_CHARS[(pId - state.dealerIndex + 4) % 4]
+                : '';
+            windEl.textContent = seatWind;
+
+            // Tile count
+            const handCount = state.players[pId].hand ? state.players[pId].hand.length : 0;
+            tilesEl.textContent = `${handCount}張`;
+
+            // Melds summary
+            const melds = state.players[pId].melds || [];
+            if (melds.length > 0) {
+                meldsEl.textContent = melds.map(m => m.type === 'chi' ? '吃' : m.type === 'pong' ? '碰' : '槓').join(' ');
+            } else {
+                meldsEl.textContent = '';
+            }
+        });
     }
 
     function renderUserHand(justDrew) {
@@ -1221,6 +1417,27 @@ const MahjongGame = (() => {
         }
     }
 
+    function renderOpponentMelds() {
+        const meldIds = ['', 'melds-right', 'melds-top', 'melds-left'];
+        for (let p = 1; p <= 3; p++) {
+            const container = document.getElementById(meldIds[p]);
+            if (!container) continue;
+            container.innerHTML = '';
+            if (!state.players[p]) continue;
+            const melds = state.players[p].melds;
+            melds.forEach(meld => {
+                const meldDiv = document.createElement('div');
+                meldDiv.className = 'opponent-meld-group';
+                meld.tiles.forEach(t => {
+                    const tile = createTileElement(t);
+                    tile.classList.add('opponent-meld-tile');
+                    meldDiv.appendChild(tile);
+                });
+                container.appendChild(meldDiv);
+            });
+        }
+    }
+
     function updateTileCount() {
         const el = document.getElementById('remain-count');
         if (el) el.textContent = state.deck.length;
@@ -1244,6 +1461,53 @@ const MahjongGame = (() => {
 
         // Remaining tiles
         updateTileCount();
+        // Update center compass panel
+        updateCenterPanel();
+    }
+
+    function updateCenterPanel() {
+        const roundEl = document.getElementById('center-round');
+        const remainEl = document.getElementById('center-remain');
+        if (roundEl) {
+            roundEl.textContent = `${WIND_CHARS[state.round]}風${state.handCount + 1}局`;
+        }
+        if (remainEl) {
+            remainEl.textContent = state.deck ? state.deck.length : '--';
+        }
+        updateCompassWinds();
+    }
+
+    function updateCompassWinds() {
+        const winds = ['east', 'south', 'west', 'north'];
+        winds.forEach(w => {
+            const el = document.getElementById(`compass-${w}`);
+            if (el) el.classList.remove('active');
+        });
+        // Map current player to their wind direction
+        // Player 0=East(bottom), 1=South(right), 2=West(top), 3=North(left) relative to dealer
+        const currentWind = (state.currentPlayer - state.dealer + 4) % 4;
+        const windEl = document.getElementById(`compass-${winds[currentWind]}`);
+        if (windEl) windEl.classList.add('active');
+    }
+
+    // --- Turn Indicator (pulse animation on active player) ---
+    function updateTurnIndicator(playerId) {
+        const areaClasses = ['bottom-player', 'right-player', 'top-player', 'left-player'];
+        // Remove all active states
+        document.querySelectorAll('.player-area').forEach(area => {
+            area.classList.remove('active-player');
+            const oldArrow = area.querySelector('.turn-arrow');
+            if (oldArrow) oldArrow.remove();
+        });
+        // Apply to current player
+        const targetArea = document.querySelector(`.${areaClasses[playerId]}`);
+        if (targetArea) {
+            targetArea.classList.add('active-player');
+            const arrow = document.createElement('div');
+            arrow.className = 'turn-arrow';
+            arrow.textContent = '\u25BC';
+            targetArea.appendChild(arrow);
+        }
     }
 
     function updateWindDisplay() {
@@ -1289,7 +1553,12 @@ const MahjongGame = (() => {
                 showToast('❌ 吃牌規則：只能吃上家的數字牌，手中需有兩張能組順子。字牌不能吃。', 3500);
                 return;
             }
-            executeChi(chiResult.combos[0]);
+            // If multiple combos, show selector
+            if (chiResult.combos.length > 1) {
+                showChiComboSelector(chiResult.combos);
+            } else {
+                executeChi(chiResult.combos[0]);
+            }
         };
         pongBtn.onclick = () => {
             if (!pongResult.valid) {
@@ -1303,9 +1572,35 @@ const MahjongGame = (() => {
         if (typeof resizeTable === 'function') resizeTable();
     }
 
+    function showChiComboSelector(combos) {
+        const selector = document.getElementById('chi-combo-selector');
+        const options = document.getElementById('chi-combo-options');
+        if (!selector || !options) return;
+
+        options.innerHTML = '';
+        combos.forEach((combo, idx) => {
+            const optDiv = document.createElement('div');
+            optDiv.className = 'chi-combo-option';
+            optDiv.title = `組合 ${idx + 1}: ${combo.map(t => getTileDisplay(t)).join(' ')}`;
+            combo.forEach(t => {
+                const tile = createTileElement(t);
+                optDiv.appendChild(tile);
+            });
+            optDiv.addEventListener('click', () => {
+                selector.classList.add('hidden');
+                executeChi(combo);
+            });
+            options.appendChild(optDiv);
+        });
+        selector.classList.remove('hidden');
+    }
+
     function hideActionBar() {
         const bar = document.getElementById('action-bar');
         if (bar) bar.classList.add('hidden');
+        // Also hide chi combo selector
+        const selector = document.getElementById('chi-combo-selector');
+        if (selector) selector.classList.add('hidden');
         if (typeof resizeTable === 'function') resizeTable();
     }
 
@@ -1371,7 +1666,8 @@ const MahjongGame = (() => {
             isSelfDraw: isZimo,
             isLastTile: state.deck.length <= 16,  // 海底：摸最後一張或被打最後一張
             lianZhuang: state.lianZhuang,          // 連莊次數 for 連N拉N
-            isDealer: winnerId === state.dealer     // 是否為莊家
+            isDealer: winnerId === state.dealer,   // 是否為莊家
+            winningTile: winningTile || null        // 胡的那張牌（用於單吊/邊張/嵌張判斷）
         };
 
         const result = MahjongAlgorithm.calculateScore(player.hand, player.melds, player.flowers, context);
@@ -1487,35 +1783,36 @@ const MahjongGame = (() => {
     }
 
     function initScoringUI() {
-        // Settings modal
-        const settingsBtn = document.getElementById('settings-btn');
-        const settingsModal = document.getElementById('settings-modal');
+        // Settings save (in slide panel, managed by app.js)
         const settingsSave = document.getElementById('settings-save');
-        const settingsCancel = document.getElementById('settings-cancel');
+        const settingsPanel = document.getElementById('settings-panel');
 
+        // When settings panel opens, populate fields with current values
+        const settingsBtn = document.getElementById('settings-btn');
         if (settingsBtn) {
-            settingsBtn.onclick = () => {
+            settingsBtn.addEventListener('click', () => {
                 document.getElementById('setting-base').value = scoring.settings.base;
                 document.getElementById('setting-per-tai').value = scoring.settings.perTai;
-                const diffEl = document.getElementById('setting-difficulty');
-                if (diffEl) diffEl.value = scoring.settings.difficulty || 'normal';
-                settingsModal.classList.remove('hidden');
-            };
+            });
         }
+
         if (settingsSave) {
             settingsSave.onclick = () => {
                 scoring.settings.base = parseInt(document.getElementById('setting-base').value) || 100;
                 scoring.settings.perTai = parseInt(document.getElementById('setting-per-tai').value) || 100;
-                const diffEl = document.getElementById('setting-difficulty');
-                if (diffEl) scoring.settings.difficulty = diffEl.value;
 
                 saveScoring();
-                settingsModal.classList.add('hidden');
+
+                // Save player names (defined in app.js)
+                if (typeof savePlayerNames === 'function') {
+                    savePlayerNames();
+                }
+                updatePlayerNames();
+
+                // Close modal overlay
+                if (settingsPanel) settingsPanel.classList.add('hidden');
                 showToast(`\u8a2d\u5b9a\u5df2\u5132\u5b58\uff1a\u5e95 ${scoring.settings.base} \u5143\uff0c\u6bcf\u53f0 ${scoring.settings.perTai} \u5143`, 2000);
             };
-        }
-        if (settingsCancel) {
-            settingsCancel.onclick = () => settingsModal.classList.add('hidden');
         }
 
         // Load saved scoreboard
@@ -1529,12 +1826,21 @@ const MahjongGame = (() => {
     }
 
     // --- Public API ---
+    function updatePlayerNames() {
+        const defaults = ['自己', '下家', '對家', '上家'];
+        PLAYER_NAMES = defaults.map((def, i) => {
+            const saved = localStorage.getItem(`mahjong_player_name_${i}`);
+            return saved || def;
+        });
+    }
+
     return {
         startGame,
         sortUserHand,
         getState: () => state,
         passAction,
         initScoringUI,
-        resetScores
+        resetScores,
+        updatePlayerNames
     };
 })();
