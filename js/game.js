@@ -34,8 +34,12 @@ const MahjongGame = (() => {
         userCanDraw: false, // Is wall clickable for user to draw?
         tutorialMode: true,
         speedMultiplier: 1, // 1 = normal, 0.5 = 2x speed
-        lianZhuang: 0       // 連莊次數 (0=初莊)
+        lianZhuang: 0,      // 連莊次數 (0=初莊)
+        roundWind: 'dong',  // 圈風
+        dealerPasses: 0,    // 本圈已過莊次數（滿 4 次換圈）
+        lastDrawnTile: null // 最近一次摸進手的牌（自摸判定用）
     };
+    const WIND_IDS = ['dong', 'nan', 'xi', 'bei'];
 
     // Persistent scoring state (survives across games)
     let scoring = loadScoring();
@@ -328,27 +332,14 @@ const MahjongGame = (() => {
 
     // --- AI ---
     function aiChooseDiscard(hand) {
-        // Always use heuristic strategy
-        const sorted = sortTiles(hand);
-        const counts = {};
-        sorted.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
-        let scored = sorted.map((tile, idx) => {
-            let score = 0;
-            const suit = getSuit(tile);
-            const num = getNumber(tile);
-            if (counts[tile] >= 3) score += 30;
-            else if (counts[tile] >= 2) score += 15;
-            if (!suit) {
-                score += counts[tile] >= 2 ? 20 : -10;
-            } else {
-                if (num >= 3 && num <= 7) score += 5;
-                if (sorted.includes((num - 1) + suit) && sorted.includes((num + 1) + suit)) score += 20;
-                else if (sorted.includes((num - 1) + suit) || sorted.includes((num + 1) + suit)) score += 10;
-            }
-            return { tile, idx, score };
-        });
-        scored.sort((a, b) => a.score - b.score);
-        return scored[0].idx;
+        // 依向聽數選牌：打完離聽牌最近、能進張最多的那張
+        // 桌上看得到的牌（海底、所有人亮出的牌組）算進去，避免去等已經沒了的牌
+        const visible = [];
+        (state.playerDiscards || []).forEach(river => river.forEach(d => visible.push(d.tile)));
+        state.players.forEach(pl => (pl.melds || []).forEach(m => visible.push(...m.tiles)));
+        const tile = MahjongAlgorithm.chooseDiscard(hand, visible);
+        const idx = hand.indexOf(tile);
+        return idx >= 0 ? idx : hand.length - 1;
     }
 
     // ===== CUSTOM TOAST UI SYSTEM =====
@@ -445,7 +436,16 @@ const MahjongGame = (() => {
             const sl = options.speedLevel || 2;
             state.speedMultiplier = sl >= 3 ? 0.33 : sl >= 2 ? 0.5 : 1;
             state.aiSpeed = parseInt(document.getElementById('ai-speed').value) || 3000;
+            // 手動開新局：從東風圈、自己當莊重新開始
+            state.dealer = 0;
+            state.round = 0;
+            state.handCount = 0;
+            state.dealerPasses = 0;
+            state.lianZhuang = 0;
+            state.roundWind = 'dong';
+            state.drawHints = 0;
         }
+        state.lastDrawnTile = null;
         // For autoRestart, keep existing tutorialMode, speedMultiplier, aiSpeed
 
         state.active = false;
@@ -474,7 +474,7 @@ const MahjongGame = (() => {
         if (selfHuBtn) {
             selfHuBtn.onclick = () => {
                 const hand = state.players[0].hand;
-                const winningTile = hand[hand.length - 1];
+                const winningTile = state.lastDrawnTile || hand[hand.length - 1];
                 declareWin(0, 0, true, null, winningTile);
             };
         }
@@ -521,9 +521,9 @@ const MahjongGame = (() => {
         updateInfoPanel();
 
         if (autoRestart) {
-            await showToast(`🀄 新局開始！莊家：${PLAYER_NAMES[state.dealer]}（連${state.lianZhuang}）`, 2000);
+            await showToast(`新局開始！莊家：${PLAYER_NAMES[state.dealer]}${state.lianZhuang ? `（連${state.lianZhuang}）` : ''}`, 2000);
         } else if (state.tutorialMode) {
-            await showToast('✅ 準備完成！莊家先出牌，輪到你時可以從牌墩摸牌', 2500 * state.speedMultiplier);
+            await showToast('準備完成！莊家先摸第 17 張再打牌，之後逆時針輪流「摸一張、打一張」', 2800 * state.speedMultiplier);
         } else {
             await showToast('抓牌完成！遊戲開始', 1500 * state.speedMultiplier);
         }
@@ -545,7 +545,6 @@ const MahjongGame = (() => {
         const total = d1 + d2 + d3;
         const sm = state.speedMultiplier;
 
-        // Show dice animation
         const diceArea = document.getElementById('dice-display');
         if (diceArea) {
             diceArea.innerHTML = `
@@ -556,56 +555,48 @@ const MahjongGame = (() => {
             diceArea.classList.add('dice-rolling');
         }
 
-        await showToast('🎲 莊家擲骰子...', 1200 * sm);
+        await showToast(`莊家 ${PLAYER_NAMES[state.dealer]} 擲三顆骰子...`, 1200 * sm);
 
-        // Stop rolling animation, show result
         if (diceArea) diceArea.classList.remove('dice-rolling');
         await tsleep(300);
 
-        // Calculate which player's wall to break
+        // 由莊家算 1，逆時針（莊家 -> 下家 -> 對家 -> 上家）數到骰子總點數
         const wallOwner = (state.dealer + (total - 1)) % 4;
         const wallOwnerName = PLAYER_NAMES[wallOwner];
-        const wallOwnerWind = WIND_CHARS[(wallOwner - state.dealer + 4) % 4];
+        const countPath = [];
+        for (let k = 0; k < Math.min(total, 4); k++) countPath.push(PLAYER_NAMES[(state.dealer + k) % 4]);
+        const ownerStart = PLAYER_WALL_START[wallOwner];
+        const skipped = new Set();
+        for (let k = 0; k < total; k++) skipped.add((ownerStart + k) % TOTAL_STACKS);
+        const startStack = (ownerStart + total) % TOTAL_STACKS;
 
         if (state.tutorialMode) {
-            // Full educational toast sequence
             await showToastSequence([
-                { text: `🎲 骰出 ${getDiceEmoji(d1)} ${getDiceEmoji(d2)} ${getDiceEmoji(d3)} = <strong>${total}</strong>`, duration: 2000 * sm },
-                { text: `從莊家（${WIND_CHARS[0]}）逆時針數 ${total} 位`, duration: 2500 * sm },
-                { text: `👉 數到 <strong>${wallOwnerName}</strong>（${wallOwnerWind}風）的牌墩`, duration: 2500 * sm },
-                { text: `從 ${wallOwnerName} 前方的牌墩，右邊數第 <strong>${total}</strong> 墩開始取牌`, duration: 3000 * sm },
-                { text: `逆時針方向，每人每次取 <strong>4 張</strong>，共取 4 輪`, duration: 2500 * sm },
+                { text: `骰出 ${getDiceEmoji(d1)} ${getDiceEmoji(d2)} ${getDiceEmoji(d3)}，合計 <strong>${total}</strong> 點`, duration: 2000 * sm },
+                { text: `第一步：從莊家算 1，<strong>逆時針</strong>數座位（${countPath.join(' → ')}${total > 4 ? ' → 繼續繞圈' : ''}），數到 ${total} 停在 <strong>${wallOwnerName}</strong>`, duration: 3600 * sm },
             ]);
-
-            // Highlight the wall side being broken
-            highlightWallSide(wallOwner);
-            await tsleep(1500);
+            state.wallMarks = { side: wallOwner };
+            renderWall();
+            await tsleep(1200 * sm);
+            state.wallMarks = { side: wallOwner, counted: skipped };
+            renderWall();
+            await showToast(`第二步：在 ${wallOwnerName} 面前的牌牆，從他的<strong>右手邊</strong>數 ${total} 墩（紅框）先留著當「牌尾」`, 3600 * sm);
+            state.wallMarks = { side: wallOwner, counted: skipped, start: startStack };
+            renderWall();
+            await showToast(`第三步：從第 <strong>${total + 1}</strong> 墩（綠框）開始，往<strong>順時針</strong>方向抓牌`, 3000 * sm);
             clearWallHighlights();
         } else {
-            // Brief summary only
-            await showToast(`🎲 ${getDiceEmoji(d1)}${getDiceEmoji(d2)}${getDiceEmoji(d3)} = ${total}，從 ${wallOwnerName} 開始取牌`, 1800 * sm);
+            await showToast(`${getDiceEmoji(d1)}${getDiceEmoji(d2)}${getDiceEmoji(d3)} = ${total}：從 ${wallOwnerName} 的牌牆右數 ${total} 墩後開抓`, 1800 * sm);
         }
 
         if (diceArea) {
-            await tsleep(500);
+            await tsleep(400);
             diceArea.innerHTML = '';
         }
 
-        // Set wall draw start position based on dice result
         setWallDrawStart();
-    }
-
-    // Highlight a wall side for tutorial
-    function highlightWallSide(playerIndex) {
-        const sideNames = ['bottom', 'right', 'top', 'left'];
-        const wallEl = document.getElementById('tile-wall');
-        if (!wallEl) return;
-        const sides = wallEl.querySelectorAll('.wall-side');
-        // playerIndex: 0=bottom(self), 1=right(下家), 2=top(對家), 3=left(上家)
-        const sideIndex = playerIndex; // matches wall-side rendering order
-        if (sides[sideIndex]) {
-            sides[sideIndex].classList.add('wall-highlight');
-        }
+        state.wallMarks = { start: startStack };
+        renderWall();
     }
 
     function clearWallHighlights() {
@@ -617,50 +608,51 @@ const MahjongGame = (() => {
     }
 
     // --- Deal Sequence ---
+    // 抓牌：從莊家開始，逆時針輪流（莊家 -> 下家 -> 對家 -> 上家），每人每次拿 2 墩 = 4 張，共 4 輪 = 16 張
     async function dealSequence() {
         const sm = state.speedMultiplier;
-        const dealOrder = [];
+        const tut = state.tutorialMode;
+
+        if (tut) {
+            await showToast('開始抓牌：莊家先拿，接著<strong>逆時針</strong>輪流；每人每次拿 <strong>2 墩（4 張）</strong>，共 4 輪', 3000 * sm);
+        }
+
         for (let round = 0; round < 4; round++) {
-            for (let p = 0; p < 4; p++) {
-                dealOrder.push((state.dealer + p) % 4);
+            for (let k = 0; k < 4; k++) {
+                const playerId = (state.dealer + k) % 4;
+                const tiles = [];
+                for (let n = 0; n < 4; n++) {
+                    const t = takeFromWall('normal');
+                    if (t) tiles.push(t);
+                }
+                state.players[playerId].hand.push(...tiles);
+                if (playerId === 0) state.players[0].hand = sortTiles(state.players[0].hand);
+
+                updateTurnIndicator(playerId);
+                updateInfoPanel(`抓牌 第 ${round + 1}/4 輪：${PLAYER_NAMES[playerId]} 拿 2 墩（手牌 ${state.players[playerId].hand.length} 張）`);
+                state.wallMarks = null;
+                renderAll();
+                renderWall();
+
+                // 教學模式第一輪放慢，讓玩家看清楚順序
+                const delay = tut ? (round === 0 ? 1100 : 380) : 140;
+                await sleep(delay * sm);
             }
-        }
-
-        if (state.tutorialMode) {
-            await showToast('📋 開始抓牌：從牌墩依序取牌，每人每次 4 張', 2000 * sm);
-        }
-
-        for (let i = 0; i < dealOrder.length; i++) {
-            const playerId = dealOrder[i];
-            const tiles = state.deck.splice(0, 4);
-            drawFromWall('normal');
-            drawFromWall('normal');
-            drawFromWall('normal');
-            drawFromWall('normal');
-            state.players[playerId].hand.push(...tiles);
-
-            if (playerId === 0) {
-                state.players[0].hand = sortTiles(state.players[0].hand);
+            if (tut || round === 3) {
+                await showToast(`第 ${round + 1} 輪抓完，每人 ${(round + 1) * 4} 張`, (tut ? 1100 : 700) * sm);
             }
-            renderAll();
-            renderWall();
-            updateTileCount();
-
-            // Show progress every 4 players (end of a round)
-            if (i % 4 === 3) {
-                const roundNum = Math.floor(i / 4) + 1;
-                await showToast(`第 ${roundNum} 輪抓牌完成（每人 ${roundNum * 4} 張）`, 1000 * sm);
-            }
-            await sleep(120 * sm);
         }
 
         state.players[0].hand = sortTiles(state.players[0].hand);
         renderAll();
-        await showToast('16 張抓牌完成，開始補花...', 1500 * sm);
-        await tsleep(400);
+        if (tut) {
+            await showToast(`16 張抓完。莊家 ${PLAYER_NAMES[state.dealer]} 等一下先摸第 17 張，再打出第一張牌`, 2600 * sm);
+        }
+        await tsleep(300);
     }
 
     // --- Flower Replacement ---
+    // 補花：從莊家開始逆時針輪流，把花牌亮出來，從「牌尾」補回同樣張數；補到花再繼續補
     async function replaceAllFlowers() {
         const sm = state.speedMultiplier;
         let anyReplaced = true;
@@ -671,18 +663,18 @@ const MahjongGame = (() => {
             anyReplaced = false;
             maxIter--;
 
-            for (let p = 0; p < 4; p++) {
+            for (let k = 0; k < 4; k++) {
+                const p = (state.dealer + k) % 4;
                 const player = state.players[p];
-                let flowerIndices = [];
+                const flowerIndices = [];
                 player.hand.forEach((tile, idx) => {
                     if (isFlower(tile)) flowerIndices.push(idx);
                 });
 
                 if (flowerIndices.length > 0) {
-                    // Tutorial: explain flower replacement on first occurrence
                     if (isFirst && state.tutorialMode) {
                         isFirst = false;
-                        await showToast('🌸 補花：花牌不能用來組牌，需從牌墩尾端補回等量新牌', 2500 * sm);
+                        await showToast('補花：花牌不能組牌，要亮在桌上，再從<strong>牌尾（粉紅框）</strong>補回一樣的張數。順序也是從莊家開始逆時針', 3400 * sm);
                     }
 
                     anyReplaced = true;
@@ -693,21 +685,14 @@ const MahjongGame = (() => {
                         player.flowers.push(flower);
                     });
                     for (let f = 0; f < flowerIndices.length; f++) {
-                        if (state.deck.length > 0) {
-                            player.hand.push(state.deck.shift());
-                            drawFromWall('replacement');
-                        }
+                        const t = takeFromWall('replacement');
+                        if (t) player.hand.push(t);
                     }
 
-                    if (p === 0) {
-                        state.players[0].hand = sortTiles(state.players[0].hand);
-                    }
+                    if (p === 0) state.players[0].hand = sortTiles(state.players[0].hand);
                     renderAll();
                     renderWall();
-                    await showToast(
-                        `🌸 ${PLAYER_NAMES[p]} 補花：${flowerNames}（補 ${flowerIndices.length} 張）`,
-                        1500 * sm
-                    );
+                    await showToast(`${PLAYER_NAMES[p]} 補花：${flowerNames}（從牌尾補 ${flowerIndices.length} 張）`, 1500 * sm);
                 }
             }
         }
@@ -716,106 +701,92 @@ const MahjongGame = (() => {
 
     // ===== WALL DISPLAY & DRAW =====
 
-    // Wall state: tracks the initial layout and which positions have been drawn
-    // 4 sides × 18 stacks = 72 stacks total, each stack has 2 tiles (top/bottom)
+    // 牌牆是唯一的牌源：4 邊 x 18 墩 = 72 墩，每墩上下 2 張，共 144 張
+    // 墩的編號沿桌面「順時針」排列（畫面由上往下看）：
+    //   上方 0..17（左到右）、右方 18..35（上到下）、下方 36..53（右到左）、左方 54..71（下到上）
+    // 抓牌、摸牌：從牌頭往順時針方向取；補花：從牌尾往逆時針方向取
     const STACKS_PER_SIDE = 18;
     const TOTAL_STACKS = STACKS_PER_SIDE * 4; // 72 stacks = 144 tiles
+    const RESERVED_TILES = 16;                 // 留海底 16 張（8 墩）不摸，摸到只剩 16 張即流局
+    const PLAYER_WALL_START = [36, 18, 0, 54]; // 各座位牌牆「自己右手邊第一墩」的編號
 
     function initWallState() {
-        // wallStacks[i] = number of tiles in stack i (0, 1, or 2)
-        // Indices 0..71 follow clockwise loop around table:
-        // 0..17: Bottom (Right to Left) -> Wait, CSS is row-reverse, so Index 0 is Right-most?
-        // Let's stick to the CSS logic:
-        // Top: 0..17 (Left->Right)
-        // Right: 18..35 (Top->Bottom)
-        // Bottom: 36..53 (Right->Left)
-        // Left: 54..71 (Bottom->Top)
+        // 洗好的牌依序疊成 72 墩：每墩 [上層, 下層]
+        state.wallTiles = [];
+        for (let i = 0; i < TOTAL_STACKS; i++) {
+            state.wallTiles.push([state.deck[i * 2], state.deck[i * 2 + 1]]);
+        }
         state.wallStacks = new Array(TOTAL_STACKS).fill(2);
-        state.wallHeadPtr = 0; // Front of wall (Clockwise draw)
-        state.wallTailPtr = 0; // Back of wall (Counter-Clockwise replacement)
+        state.wallHeadPtr = 0;
+        state.wallTailPtr = TOTAL_STACKS - 1;
+        state.dealStartIdx = -1;
+        state.recentTaken = [];
+        state.wallMarks = null;
+    }
+
+    function wallRemaining() {
+        return state.wallStacks ? state.wallStacks.reduce((s, c) => s + c, 0) : 0;
+    }
+
+    // 牌牆還能正常摸的張數（扣掉海底 16 張）
+    function wallDrawable() {
+        return Math.max(0, wallRemaining() - RESERVED_TILES);
     }
 
     function setWallDrawStart() {
-        // diceResult sum
         const total = state.diceResult[0] + state.diceResult[1] + state.diceResult[2];
-        // wallOwner: 0=Bottom, 1=Right, 2=Top, 3=Left
         const wallOwner = (state.dealer + (total - 1)) % 4;
-
-        // Visual mapping to indices based on CSS side order
-        // 0=Bottom, 1=Right, 2=Top, 3=Left (Game logic)
-        // But CSS visual loop: Top(0-17)->Right(18-35)->Bottom(36-53)->Left(54-71)
-        // We need to map GameSide to StackIndex
-        // GameSide 0 (Bottom) -> Indices 36..53
-        // GameSide 1 (Right)  -> Indices 18..35
-        // GameSide 2 (Top)    -> Indices 0..17
-        // GameSide 3 (Left)   -> Indices 54..71
-
-        // Wait, standard Mahjong: Dealer is East.
-        // Let's rely on the simple logic: Wall Owner is P.
-        // We create a break at P's wall.
-        // We need a map from PlayerID to StartIndex.
-        const playerToWallStart = [36, 18, 0, 54]; // Bottom, Right, Top, Left
-
-        let startIdx = playerToWallStart[wallOwner];
-
-        // "Right side" of that wall.
-        // Since we defined the loop Clockwise, "Right end" means "Index + total"?
-        // Actually normally it's count from Right.
-        // Bottom (R->L): Start is Right-most. So Index 36 is Right-most.
-        // So `36 + total` is correct.
-
+        const startIdx = PLAYER_WALL_START[wallOwner];
+        // 從牌牆主人的右手邊數過 total 墩，從第 total+1 墩開始抓（順時針）
         state.wallHeadPtr = (startIdx + total) % TOTAL_STACKS;
-        // Tail pointer is one step behind Head (Counter-Clockwise)
+        state.dealStartIdx = state.wallHeadPtr;
+        // 被跳過的那幾墩就是牌尾，補花從緊鄰開口的那一墩開始往回拿
         state.wallTailPtr = (state.wallHeadPtr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
     }
 
-    function drawFromWall(mode = 'normal') {
-        // mode: 'normal' (Head moves CW), 'replacement' (Tail moves CCW)
-        let ptr = (mode === 'normal') ? state.wallHeadPtr : state.wallTailPtr;
-        let attempts = 0;
-
-        // Find next available tile
-        while (attempts < TOTAL_STACKS) {
-            if (state.wallStacks[ptr] > 0) {
-                state.wallStacks[ptr]--; // Take one tile
-
-                // If stack becomes empty, or if we just took from a full stack?
-                // The pointer logic:
-                // Normal: If we take a tile, do we advance?
-                // Visual stack has 2 tiles. We take top. Stack remains with 1. Pointer stays?
-                // No, standard is we take the full stack (2 tiles) usually for 4-tile deal?
-                // But here we simulate per-tile.
-                // Implementation: Take top (2->1), then take bottom (1->0).
-                // So pointer STAYS until stack is 0.
-
-                if (state.wallStacks[ptr] === 0) {
-                    // Stack empty, move pointer
-                    if (mode === 'normal') {
-                        state.wallHeadPtr = (ptr + 1) % TOTAL_STACKS;
-                    } else {
-                        state.wallTailPtr = (ptr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
-                    }
-                }
-                return;
+    // 從牌牆取一張牌並回傳。mode: 'normal' 牌頭（順時針）、'replacement' 牌尾（補花）
+    function takeFromWall(mode = 'normal') {
+        const forward = mode === 'normal';
+        let ptr = forward ? state.wallHeadPtr : state.wallTailPtr;
+        for (let attempts = 0; attempts < TOTAL_STACKS; attempts++) {
+            const count = state.wallStacks[ptr];
+            if (count > 0) {
+                // 上層先拿，再拿下層
+                const tile = state.wallTiles[ptr][2 - count];
+                state.wallStacks[ptr] = count - 1;
+                state.recentTaken.push({ idx: ptr, t: Date.now() });
+                const next = forward ? (ptr + 1) % TOTAL_STACKS : (ptr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
+                if (forward) state.wallHeadPtr = state.wallStacks[ptr] === 0 ? next : ptr;
+                else state.wallTailPtr = state.wallStacks[ptr] === 0 ? next : ptr;
+                return tile;
             }
-
-            // If current stack empty, skip to next
-            if (mode === 'normal') {
-                ptr = (ptr + 1) % TOTAL_STACKS;
-                state.wallHeadPtr = ptr;
-            } else {
-                ptr = (ptr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
-                state.wallTailPtr = ptr;
-            }
-            attempts++;
+            ptr = forward ? (ptr + 1) % TOTAL_STACKS : (ptr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
         }
+        return null;
+    }
+
+    // 海底：從牌尾往回數 16 張所在的墩（正常摸牌摸不到）
+    function getReservedStacks() {
+        const reserved = new Set();
+        if (!state.wallStacks || state.dealStartIdx < 0) return reserved;
+        let acc = 0;
+        let ptr = state.wallTailPtr;
+        for (let i = 0; i < TOTAL_STACKS && acc < RESERVED_TILES; i++) {
+            const c = state.wallStacks[ptr];
+            if (c > 0) {
+                reserved.add(ptr);
+                acc += c;
+            }
+            ptr = (ptr - 1 + TOTAL_STACKS) % TOTAL_STACKS;
+        }
+        return reserved;
     }
 
     function renderWall() {
         const wallEl = document.getElementById('tile-wall');
         if (!wallEl) return;
 
-        const remaining = state.deck.length;
+        const remaining = wallRemaining();
         wallEl.innerHTML = '';
 
         if (remaining === 0) {
@@ -824,8 +795,13 @@ const MahjongGame = (() => {
             return;
         }
 
-        // CSS defines: Top(0-17), Right(18-35), Bottom(36-53), Left(54-71)
-        // Mapping from visual side name to index range
+        const now = Date.now();
+        state.recentTaken = (state.recentTaken || []).filter(r => now - r.t < 1200);
+        const justTaken = new Set(state.recentTaken.map(r => r.idx));
+        const reserved = getReservedStacks();
+        const marks = state.wallMarks || {};
+        const started = state.dealStartIdx >= 0;
+
         const sides = [
             { name: 'wall-side-top', start: 0 },
             { name: 'wall-side-right', start: 18 },
@@ -836,13 +812,16 @@ const MahjongGame = (() => {
         sides.forEach(sideDef => {
             const side = document.createElement('div');
             side.className = `wall-side ${sideDef.name}`;
+            // 教學：骰子數到的那一家，他面前的牌牆整排發光
+            if (marks.side !== undefined && PLAYER_WALL_START[marks.side] === sideDef.start) {
+                side.classList.add('wall-highlight');
+            }
 
             for (let i = 0; i < STACKS_PER_SIDE; i++) {
                 const stackIdx = sideDef.start + i;
                 const count = state.wallStacks ? state.wallStacks[stackIdx] : 2;
                 const stack = document.createElement('div');
                 stack.className = 'wall-brick';
-                // Dataset for click validation
                 stack.dataset.idx = stackIdx;
 
                 if (count === 0) {
@@ -850,21 +829,25 @@ const MahjongGame = (() => {
                 } else if (count >= 2) {
                     stack.classList.add('double');
                 }
+                if (count > 0 && started && reserved.has(stackIdx)) stack.classList.add('reserved');
+                if (justTaken.has(stackIdx)) stack.classList.add('just-taken');
+                if (marks.counted && marks.counted.has(stackIdx)) stack.classList.add('counted');
+                if (marks.start === stackIdx) stack.classList.add('start-mark');
 
-                // Highlight HEAD pointer (Next Normal Draw)
-                if (state.wallStacks && stackIdx === state.wallHeadPtr && count > 0) {
+                // 牌頭（下一張正常摸牌）與牌尾（下一張補花）
+                if (started && count > 0 && stackIdx === state.wallHeadPtr) {
                     stack.classList.add('draw-next');
+                } else if (started && count > 0 && stackIdx === state.wallTailPtr) {
+                    stack.classList.add('draw-tail');
                 }
 
-                // Add click handler to individual brick
                 stack.onclick = (e) => {
-                    e.stopPropagation(); // prevent bubbling to container
+                    e.stopPropagation();
                     if (state.userCanDraw) {
-                        // Check if this is the correct stack (Head Ptr)
                         if (stackIdx === state.wallHeadPtr) {
                             wallClickDraw();
                         } else {
-                            showToast('⚠️ 請從順時針方向正確位置（亮燈處）摸牌！', 1500);
+                            showToast('摸牌要從<strong>亮黃色</strong>那一墩拿：牌頭沿順時針方向前進', 1800);
                         }
                     }
                 };
@@ -874,11 +857,16 @@ const MahjongGame = (() => {
             wallEl.appendChild(side);
         });
 
-        // Update clickable state
         if (state.userCanDraw) {
             wallEl.classList.add('wall-clickable');
         } else {
             wallEl.classList.remove('wall-clickable');
+        }
+
+        // 剛被拿走的墩閃一下後，再重畫一次把閃光收掉
+        if (justTaken.size > 0) {
+            clearTimeout(state.wallFlashTimer);
+            state.wallFlashTimer = setTimeout(renderWall, 1250);
         }
     }
 
@@ -888,8 +876,12 @@ const MahjongGame = (() => {
         updateTurnIndicator(0);
         startTurnTimer(); // Start thinking timer
         renderWall();
-        updateInfoPanel('輪到您，請點擊牌墩摸牌');
-        showToast('👆 輪到您摸牌，請點擊牌桌上的<strong>牌墩</strong>', 2500);
+        updateInfoPanel('輪到您：點亮黃色的牌墩摸牌');
+        // 教學模式前幾手提示怎麼摸牌，之後就不再干擾
+        state.drawHints = (state.drawHints || 0) + 1;
+        if (state.tutorialMode && state.drawHints <= 3) {
+            showToast('輪到您摸牌：點牌桌上<strong>亮黃色</strong>的那一墩（牌頭），摸牌永遠沿順時針前進', 2600);
+        }
     }
 
     function wallClickDraw() {
@@ -909,19 +901,20 @@ const MahjongGame = (() => {
 
         const dealerName = PLAYER_NAMES[state.dealer];
         const lz = state.lianZhuang;
-        showToast(`🔚 流局（臭莊）！莊家 ${dealerName} 連莊（連${lz}），台數 +1`, 4000);
+        showToast(`流局：牌牆只剩海底 ${RESERVED_TILES} 張，沒人胡牌。莊家 ${dealerName} 連莊（連${lz}拉${lz}）`, 4000);
 
         // Auto start next round after delay
         setTimeout(() => {
-            showToast(`🔄 自動開始下一局...莊家：${dealerName}（連${lz}）`, 2500);
+            showToast(`下一局開始，莊家：${dealerName}（連${lz}）`, 2500);
             setTimeout(() => {
                 startGame(true); // autoRestart = true, skip modal
             }, 2500);
         }, 4500);
     }
 
-    function drawTileForPlayer(playerId) {
-        if (!state.active || state.deck.length <= 16) {
+    // fromTail=true 表示這是補花，從牌尾拿
+    function drawTileForPlayer(playerId, fromTail) {
+        if (!state.active || wallDrawable() <= 0) {
             handleDraw();
             return;
         }
@@ -929,9 +922,9 @@ const MahjongGame = (() => {
         // Play Sound
         if (window.AudioManager) AudioManager.playClack();
 
-        const tile = state.deck.pop();
+        const tile = takeFromWall(fromTail ? 'replacement' : 'normal');
         state.players[playerId].hand.push(tile);
-        drawFromWall('normal');
+        state.lastDrawnTile = tile;
         updateTileCount();
         renderWall();
 
@@ -943,11 +936,11 @@ const MahjongGame = (() => {
             player.flowers.push(tile);
 
             if (playerId === 0) {
-                showToast(`🌸 摸到花牌 ${getTileDisplay(tile)}，自動補花！`, 1500);
+                showToast(`摸到花牌 ${getTileDisplay(tile)}：亮出來，從<strong>牌尾</strong>補一張`, 1600);
                 renderAll();
             }
-            // Recursively draw again
-            setTimeout(() => drawTileForPlayer(playerId), 600);
+            // 補花：從牌尾再摸一張
+            setTimeout(() => drawTileForPlayer(playerId, true), 600);
             return;
         }
 
@@ -955,7 +948,7 @@ const MahjongGame = (() => {
         if (playerId === 0) {
             if (MahjongAlgorithm.canHu(state.players[playerId].hand)) {
                 showSelfDrawHuButton(true);
-                showToast('🎉 自摸！請按「胡」結束牌局', 3000);
+                showToast('自摸！按「胡」看台數怎麼算', 3000);
             } else {
                 showSelfDrawHuButton(false);
             }
@@ -1001,18 +994,24 @@ const MahjongGame = (() => {
         updateTurnIndicator(state.currentPlayer);
 
         if (state.currentPlayer === 0) {
+            // 牌牆只剩海底就直接流局，不要叫玩家去摸一墩摸不到的牌
+            if (wallDrawable() <= 0) {
+                handleDraw();
+                return;
+            }
             enableUserDraw();
         } else {
             setTimeout(() => aiTurn(state.currentPlayer), state.aiSpeed * 0.3);
         }
     }
 
-    function aiTurn(playerId) {
+    // fromTail=true 表示這是補花，從牌尾拿
+    function aiTurn(playerId, fromTail) {
         try {
             if (!state.active || state.waitingForAction) return;
             updateTurnIndicator(playerId);
 
-            if (state.deck.length <= 16) {
+            if (wallDrawable() <= 0) {
                 handleDraw();
                 return;
             }
@@ -1020,12 +1019,24 @@ const MahjongGame = (() => {
             // Play Sound
             if (window.AudioManager) AudioManager.playClack();
 
-            const tile = state.deck.pop();
+            const tile = takeFromWall(fromTail ? 'replacement' : 'normal');
             state.players[playerId].hand.push(tile);
-            drawFromWall('normal'); // AI also draws from wall
+            state.lastDrawnTile = tile;
             updateTileCount();
             renderOpponentBacks();
             renderWall();
+
+            // 摸到花：先亮花、從牌尾補，再判斷胡牌
+            if (isFlower(tile)) {
+                const player = state.players[playerId];
+                const idx = player.hand.indexOf(tile);
+                player.hand.splice(idx, 1);
+                player.flowers.push(tile);
+                renderAll();
+                updateInfoPanel(`${PLAYER_NAMES[playerId]} 摸到花，從牌尾補花`);
+                setTimeout(() => aiTurn(playerId, true), 500);
+                return;
+            }
 
             // Check AI Self-Draw (Tsumo) - Safety Check
             let canHu = false;
@@ -1038,16 +1049,6 @@ const MahjongGame = (() => {
             if (canHu) {
                 // AI Wins! Details calculated in modal.
                 declareWin(playerId, 1, true, null, tile);
-                return;
-            }
-
-            if (isFlower(tile)) {
-                const player = state.players[playerId];
-                const idx = player.hand.indexOf(tile);
-                player.hand.splice(idx, 1);
-                player.flowers.push(tile);
-                renderAll();
-                setTimeout(() => aiTurn(playerId), 500);
                 return;
             }
 
@@ -1283,7 +1284,7 @@ const MahjongGame = (() => {
     function passAction() {
         if (state.huPossible) {
             state.players[0].guoShui = true;
-            showToast('過水！本圈無法胡牌', 2000);
+            showToast('過水：放棄這張不胡，在你下次摸牌前都不能再胡別人的牌', 2400);
         }
         state.huPossible = false;
         stopTurnTimer(); // Decision made (Pass)
@@ -1315,8 +1316,8 @@ const MahjongGame = (() => {
             if (!windEl || !state.players[pId]) return;
 
             // Wind badge
-            const seatWind = (state.dealerIndex !== undefined)
-                ? WIND_CHARS[(pId - state.dealerIndex + 4) % 4]
+            const seatWind = (state.dealer !== undefined)
+                ? WIND_CHARS[(pId - state.dealer + 4) % 4]
                 : '';
             windEl.textContent = seatWind;
 
@@ -1440,7 +1441,7 @@ const MahjongGame = (() => {
 
     function updateTileCount() {
         const el = document.getElementById('remain-count');
-        if (el) el.textContent = state.deck.length;
+        if (el) el.textContent = wallDrawable();
     }
 
     // --- Info Panel (top-right) ---
@@ -1472,7 +1473,7 @@ const MahjongGame = (() => {
             roundEl.textContent = `${WIND_CHARS[state.round]}風${state.handCount + 1}局`;
         }
         if (remainEl) {
-            remainEl.textContent = state.deck ? state.deck.length : '--';
+            remainEl.textContent = state.wallStacks ? wallDrawable() : '--';
         }
         updateCompassWinds();
     }
@@ -1633,148 +1634,181 @@ const MahjongGame = (() => {
         }
     }
 
-    function calculateWinAmount(taiCount, isZimo) {
-        const { base, perTai } = scoring.settings;
-        const perPlayer = base + taiCount * perTai;
-        if (isZimo) {
-            return perPlayer * 3; // all 3 opponents pay
-        }
-        return perPlayer; // only discarder pays
-    }
-
     // --- Win Handling ---
     function declareWin(winnerId, taiCount, isZimo, loserId, winningTile) {
-        // If winningTile is missing, try to infer it (unsafe but fallback)
+        if (!state.active) return; // 已結束的局不再重複結算
+        // 先把牌局停住，避免結算畫面打開時電腦還在出牌
+        state.active = false;
+        state.waitingForAction = false;
+        state.huPossible = false;
+        state.userCanDraw = false;
+        stopTurnTimer();
+        hideActionBar();
+        showSelfDrawHuButton(false);
+        renderWall();
+
         if (!winningTile) {
             const hand = state.players[winnerId].hand;
-            winningTile = hand[hand.length - 1];
+            winningTile = isZimo ? (state.lastDrawnTile || hand[hand.length - 1]) : state.lastDiscard;
         }
-
-        // Show Win Modal to calculate details
         showWinModal(winnerId, isZimo, loserId, winningTile);
+    }
+
+    // 依台灣常見算法計算每位付款者要付多少
+    // 一般台：每位付款者都算；莊家台：只有「莊家胡」或「付款的人是莊家」才加
+    function computePayments(winnerId, isZimo, loserId, result) {
+        const { base, perTai } = scoring.settings;
+        const payers = isZimo ? [0, 1, 2, 3].filter(p => p !== winnerId) : [loserId];
+        return payers.map(p => {
+            const withDealer = winnerId === state.dealer || p === state.dealer;
+            const tai = result.total + (withDealer ? result.dealerTai : 0);
+            return { payer: p, tai, withDealer, amount: base + tai * perTai };
+        });
     }
 
     function showWinModal(winnerId, isZimo, loserId, winningTile) {
         const modal = document.getElementById('win-modal');
         if (!modal) return;
 
-        // 1. Calculate Score Details
         const player = state.players[winnerId];
+        // 胡別人打的牌時，那張牌還不在手上，算台前要先放進來
+        const scoringHand = isZimo ? [...player.hand] : [...player.hand, winningTile];
         const context = {
             roundWind: state.roundWind || 'dong',
-            seatWind: ['dong', 'nan', 'xi', 'bei'][(winnerId - state.dealer + 4) % 4],
+            seatWind: WIND_IDS[(winnerId - state.dealer + 4) % 4],
             isSelfDraw: isZimo,
-            isLastTile: state.deck.length <= 16,  // 海底：摸最後一張或被打最後一張
-            lianZhuang: state.lianZhuang,          // 連莊次數 for 連N拉N
-            isDealer: winnerId === state.dealer,   // 是否為莊家
-            winningTile: winningTile || null        // 胡的那張牌（用於單吊/邊張/嵌張判斷）
+            isLastTile: wallDrawable() <= 0,       // 海底撈月 / 河底撈魚
+            lianZhuang: state.lianZhuang,
+            winningTile: winningTile || null
         };
 
-        const result = MahjongAlgorithm.calculateScore(player.hand, player.melds, player.flowers, context);
+        const result = MahjongAlgorithm.calculateScore(scoringHand, player.melds, player.flowers, context);
+        const payments = computePayments(winnerId, isZimo, loserId, result);
+        const dealerInvolved = payments.some(p => p.withDealer);
+        const { base, perTai } = scoring.settings;
 
-        // Update Tai Count (override manual input if any)
-        const totalTai = result.total;
+        // 標題
+        const titleEl = document.getElementById('win-title');
+        if (titleEl) titleEl.textContent = isZimo ? '自摸！' : '胡牌！';
+        const seatName = WIND_CHARS[(winnerId - state.dealer + 4) % 4];
+        document.getElementById('win-winner').textContent = isZimo
+            ? `${PLAYER_NAMES[winnerId]}（${seatName}家）自摸`
+            : `${PLAYER_NAMES[winnerId]}（${seatName}家）胡 ${PLAYER_NAMES[loserId]} 打的牌`;
 
-        // 2. Render Modal
-        document.getElementById('win-winner').textContent = `${PLAYER_NAMES[winnerId]} ${isZimo ? '自摸' : '胡牌'}！`;
-
-        // Hand Display
+        // 手牌：明牌組 + 立牌 + 胡的那張（分開標示）
         const handDiv = document.getElementById('win-hand');
         handDiv.innerHTML = '';
-        // Melds
         player.melds.forEach(m => {
             const grp = document.createElement('div');
-            grp.className = 'meld-group';
-            grp.style.display = 'flex';
-            grp.style.marginRight = '8px';
+            grp.className = 'meld-group win-meld';
             m.tiles.forEach(t => grp.appendChild(createTileElement(t)));
             handDiv.appendChild(grp);
         });
-        // Standing Hand
-        const standing = [...player.hand];
-        // If winning tile is in hand, remove it to show separately? 
-        // Or just sort and show. 
-        // Winning tile should be highlighted.
-        // Let's just show sorted hand.
-        const sorted = sortTiles(standing);
-        sorted.forEach(t => {
-            const el = createTileElement(t);
-            if (t === winningTile) el.style.filter = 'brightness(1.2) drop-shadow(0 0 5px gold)';
-            handDiv.appendChild(el);
-        });
+        const standing = [...scoringHand];
+        const wIdx = standing.lastIndexOf(winningTile);
+        if (wIdx >= 0) standing.splice(wIdx, 1);
+        sortTiles(standing).forEach(t => handDiv.appendChild(createTileElement(t)));
+        if (winningTile) {
+            const winWrap = document.createElement('div');
+            winWrap.className = 'win-tile-wrap';
+            const el = createTileElement(winningTile);
+            el.classList.add('win-tile');
+            winWrap.appendChild(el);
+            const label = document.createElement('span');
+            label.className = 'win-tile-label';
+            label.textContent = isZimo ? '自摸' : '胡';
+            winWrap.appendChild(label);
+            handDiv.appendChild(winWrap);
+        }
+        if (player.flowers.length > 0) {
+            const fl = document.createElement('div');
+            fl.className = 'win-flowers';
+            player.flowers.forEach(f => fl.appendChild(createTileElement(f)));
+            handDiv.appendChild(fl);
+        }
 
-        // Details
+        // 台數明細
         const listDiv = document.getElementById('win-details');
         listDiv.innerHTML = '';
-        result.details.forEach(d => {
+        const addRow = (d, extraClass) => {
             const item = document.createElement('div');
-            item.className = 'win-details-item';
-            item.innerHTML = `<span>${d.name}</span><span>${d.tai} 台</span>`;
+            item.className = 'win-details-item' + (extraClass ? ' ' + extraClass : '');
+            item.innerHTML = `<div class="win-detail-main"><span>${d.name}</span><span class="win-detail-tai">${d.tai} 台</span></div>`
+                + (d.desc ? `<div class="win-detail-desc">${d.desc}</div>` : '');
             listDiv.appendChild(item);
-        });
-        // Add Base?
-        const base = scoring.settings.base;
-        const perTai = scoring.settings.perTai;
-        const totalAmt = base + totalTai * perTai;
+        };
+        if (result.details.length === 0) {
+            addRow({ name: '無台', tai: 0, desc: '這手牌沒有任何台型，只收底' });
+        } else {
+            result.details.forEach(d => addRow(d));
+        }
+        if (dealerInvolved) {
+            const head = document.createElement('div');
+            head.className = 'win-detail-subhead';
+            head.textContent = winnerId === state.dealer
+                ? '莊家台（莊家胡牌，每一家都要加）'
+                : `莊家台（只有莊家 ${PLAYER_NAMES[state.dealer]} 付的那份要加）`;
+            listDiv.appendChild(head);
+            result.dealerDetails.forEach(d => addRow(d, 'dealer-row'));
+        }
 
-        const baseItem = document.createElement('div');
-        baseItem.className = 'win-details-item';
-        baseItem.innerHTML = `<span>底</span><span>${base} (底)</span>`;
-        listDiv.prepend(baseItem);
+        // 付款明細：底 + 台數 x 每台
+        const payDiv = document.createElement('div');
+        payDiv.className = 'win-pay-list';
+        payDiv.innerHTML = `<div class="win-pay-formula">每份 = 底 ${base} + 台數 x 每台 ${perTai}</div>`
+            + payments.map(p => `<div class="win-pay-row"><span>${PLAYER_NAMES[p.payer]}${p.payer === state.dealer ? '（莊）' : ''} 付</span>`
+                + `<span>${base} + ${p.tai} x ${perTai} = <strong>${p.amount}</strong></span></div>`).join('');
+        listDiv.appendChild(payDiv);
 
-        // Total
-        const totalDiv = document.getElementById('win-total');
-        totalDiv.textContent = `總計：${totalTai} 台 / ${totalAmt} 元`;
+        const totalAmt = payments.reduce((s, p) => s + p.amount, 0);
+        const shownTai = result.total + (winnerId === state.dealer ? result.dealerTai : 0);
+        document.getElementById('win-total').textContent =
+            `${shownTai} 台，${PLAYER_NAMES[winnerId]} 共收 ${totalAmt}`;
 
-        // 3. Show
         modal.style.display = 'flex';
 
-        // 4. Bind Confirm Button
         const btn = document.getElementById('win-confirm-btn');
         btn.onclick = () => {
             modal.style.display = 'none';
-            processWinResult(winnerId, totalTai, isZimo, loserId, totalAmt);
+            processWinResult(winnerId, isZimo, loserId, payments);
         };
     }
 
-    function processWinResult(winnerId, taiCount, isZimo, loserId, totalAmt) {
-        if (isZimo) {
-            // Self-draw: all 3 others pay
-            for (let p = 0; p < 4; p++) {
-                if (p === winnerId) {
-                    scoring.scores[p] += totalAmt * 3;
-                } else {
-                    scoring.scores[p] -= totalAmt;
-                }
-            }
-            scoring.stats[winnerId].zimo++;
-            scoring.stats[winnerId].hu++;
-        } else {
-            // Discard win: only loser pays
-            scoring.scores[winnerId] += totalAmt;
-            scoring.scores[loserId] -= totalAmt;
-            scoring.stats[winnerId].hu++;
-            scoring.stats[loserId].fangqiang++;
-        }
+    function processWinResult(winnerId, isZimo, loserId, payments) {
+        payments.forEach(p => {
+            scoring.scores[p.payer] -= p.amount;
+            scoring.scores[winnerId] += p.amount;
+        });
+        scoring.stats[winnerId].hu++;
+        if (isZimo) scoring.stats[winnerId].zimo++;
+        else if (loserId !== null && loserId !== undefined) scoring.stats[loserId].fangqiang++;
 
         saveScoring();
         updateScoreboard();
 
-        // End the game
         state.active = false;
         showSelfDrawHuButton(false);
 
-        // Dealer rotation logic (莊家輪替)
+        // 莊家輪替：莊家胡牌就連莊；別人胡牌就由下家（逆時針下一位）接莊
+        let msg;
         if (winnerId === state.dealer) {
-            // 莊家胡牌 → 連莊
             state.lianZhuang++;
-            showToast(`本局結束！莊家 ${PLAYER_NAMES[state.dealer]} 連莊（連 ${state.lianZhuang}）`, 3000);
+            msg = `莊家 ${PLAYER_NAMES[state.dealer]} 胡牌，連莊（連${state.lianZhuang}拉${state.lianZhuang}）`;
         } else {
-            // 非莊家胡 → 莊家換人，連莊歸零
             state.lianZhuang = 0;
             state.dealer = (state.dealer + 1) % 4;
-            showToast(`本局結束！下一局莊家：${PLAYER_NAMES[state.dealer]}`, 3000);
+            state.dealerPasses++;
+            if (state.dealerPasses >= 4) {
+                // 四家都當過莊 = 一圈結束，換下一個圈風
+                state.dealerPasses = 0;
+                state.round = (state.round + 1) % 4;
+            }
+            msg = `換莊：下一局由 ${PLAYER_NAMES[state.dealer]} 當莊`;
         }
+        state.handCount = state.dealerPasses;
+        state.roundWind = WIND_IDS[state.round];
+        showToast(`${msg}。現在是${WIND_CHARS[state.round]}風圈第 ${state.handCount + 1} 局`, 2600);
+        setTimeout(() => startGame(true), 2800);
     }
 
     function showSelfDrawHuButton(show) {

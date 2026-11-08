@@ -22,7 +22,7 @@ function renderTileOverview() {
         { name: '筒子 (Dots)', desc: '1~9筒，各4張，共36張', tiles: ['1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p'] },
         { name: '條子 (Bamboo)', desc: '1~9條，各4張，共36張', tiles: ['1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s'] },
         { name: '字牌 (Honors)', desc: '風牌4種＋三元牌3種，各4張，共28張', tiles: ['dong', 'nan', 'xi', 'bei', 'zhong', 'fa', 'bai'] },
-        { name: '花牌 (Flowers)', desc: '春夏秋冬＋梅蘭竹菊，各1張，共8張', tiles: ['s1', 's2', 's3', 's4', 'f1', 'f2', 'f3', 'f4'] }
+        { name: '花牌 (Flowers)', desc: '春夏秋冬＋梅蘭菊竹，各1張，共8張', tiles: ['s1', 's2', 's3', 's4', 'f1', 'f2', 'f3', 'f4'] }
     ];
 
     categories.forEach(cat => {
@@ -110,7 +110,7 @@ function getTileDisplay(id) {
     const map = {
         'dong': '東', 'nan': '南', 'xi': '西', 'bei': '北',
         'zhong': '中', 'fa': '發', 'bai': '',
-        'f1': '梅', 'f2': '蘭', 'f3': '竹', 'f4': '菊',
+        'f1': '梅', 'f2': '蘭', 'f3': '菊', 'f4': '竹',
         's1': '春', 's2': '夏', 's3': '秋', 's4': '冬'
     };
     if (map[id] !== undefined) return map[id];
@@ -137,7 +137,7 @@ function createTileElement(id) {
         if (['f1', 'f2', 'f3', 'f4', 's1', 's2', 's3', 's4'].includes(id)) {
             el.dataset.suit = 'flower';
             el.classList.add('flower-tile');
-            const charMap = { 's1': '春', 's2': '夏', 's3': '秋', 's4': '冬', 'f1': '梅', 'f2': '蘭', 'f3': '竹', 'f4': '菊' };
+            const charMap = { 's1': '春', 's2': '夏', 's3': '秋', 's4': '冬', 'f1': '梅', 'f2': '蘭', 'f3': '菊', 'f4': '竹' };
             el.textContent = '';
             const flowerImg = document.createElement('img');
             flowerImg.src = `images/flowers/${id}.png`;
