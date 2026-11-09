@@ -158,6 +158,18 @@ function resizeTable() {
     const baseWidth = 1000;
     const baseHeight = 650;
 
+    // 手機橫向（高度 <= 500 的橫向畫面）改用緊湊版面
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const compact = H <= 500 && W > H;
+    document.body.classList.toggle('compact-landscape', compact);
+    if (compact) {
+        layoutCompactTable(table, W, H, baseWidth, baseHeight);
+        return;
+    }
+    table.style.top = '';
+    table.style.left = '';
+
     const bottomReserve = 120; // reserve space for hand area
     const availableW = window.innerWidth - 16;
     const availableH = window.innerHeight - bottomReserve;
@@ -178,6 +190,57 @@ function resizeTable() {
         const tileWidth = Math.min(62, Math.floor(maxHandWidth / tileCount) - 4);
         bp.style.setProperty('--dynamic-tile-w', tileWidth + 'px');
     }
+}
+
+// 手機橫向：底部一整排手牌，左右兩側欄放資訊與對手，中間放牌桌
+function layoutCompactTable(table, W, H, baseWidth, baseHeight) {
+    const bp = document.querySelector('.bottom-player .hand-display');
+    const tileCount = bp ? Math.max(bp.querySelectorAll('.tile').length, 17) : 17;
+    const tileW = Math.max(24, Math.min(46, Math.floor((W - 48) / tileCount) - 2));
+    const handH = Math.round(tileW * 1.32) + 16;
+    const sideMin = Math.max(116, Math.round(W * 0.16));
+    const availW = W - sideMin * 2;
+    const availH = H - handH - 6;
+
+    const root = document.documentElement;
+    root.style.setProperty('--hand-h', handH + 'px');
+    if (bp) bp.style.setProperty('--dynamic-tile-w', tileW + 'px');
+
+    // 先放一次量出斜放後的實際外框，再依外框修正縮放與置中
+    const apply = (s, left, top) => {
+        table.style.left = left + 'px';
+        table.style.top = top + 'px';
+        table.style.transform = `rotateX(35deg) scale(${s}) translate(-50%, -55%)`;
+    };
+    let scale = Math.min(availW / baseWidth, availH / baseHeight);
+    apply(scale, W / 2, availH / 2);
+    let r = table.getBoundingClientRect();
+    scale = Math.max(0.25, scale * Math.min(availW / r.width, availH / r.height));
+    apply(scale, W / 2, availH / 2);
+    r = table.getBoundingClientRect();
+    const left = W / 2 + (W / 2 - (r.left + r.width / 2));
+    const top = availH / 2 + (availH / 2 + 3 - (r.top + r.height / 2));
+    apply(scale, left, top);
+    r = table.getBoundingClientRect();
+
+    window._tableScale = scale;
+    root.style.setProperty('--side-w', Math.max(108, Math.floor((W - r.width) / 2) - 6) + 'px');
+    placeLeftOpponent();
+}
+
+// 左側對手卡片放在資訊面板正下方（面板文字一變高度就變，所以監看文字變動再量一次）
+let infoObserver = null;
+function placeLeftOpponent() {
+    const info = document.getElementById('info-panel');
+    if (!info) return;
+    if (!infoObserver && window.MutationObserver) {
+        infoObserver = new MutationObserver(() => {
+            if (document.body.classList.contains('compact-landscape')) placeLeftOpponent();
+        });
+        infoObserver.observe(info, { childList: true, subtree: true, characterData: true });
+    }
+    const bottom = Math.round(info.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty('--left-opp-top', (bottom + 6) + 'px');
 }
 
 // No-ops (game-first mode, body always has fullscreen-game class)
@@ -204,6 +267,12 @@ function initPanels() {
         settingsPanel.classList.add('hidden');
         helpPanel.classList.add('hidden');
     }
+
+    // 手機橫向：分數表平時收起，按「分」叫出、點分數表本身關閉
+    const scoreBtn = document.getElementById('score-btn');
+    const scoreBoard = document.getElementById('floating-scoreboard');
+    if (scoreBtn) scoreBtn.addEventListener('click', () => document.body.classList.toggle('show-scores'));
+    if (scoreBoard) scoreBoard.addEventListener('click', () => document.body.classList.remove('show-scores'));
 
     if (settingsBtn) settingsBtn.addEventListener('click', () => openModal(settingsPanel));
     if (helpBtn) helpBtn.addEventListener('click', () => openModal(helpPanel));
@@ -337,7 +406,12 @@ function savePlayerNames() {
     applyPlayerNames();
 }
 
-window.addEventListener('resize', resizeTable);
+window.addEventListener('resize', () => {
+    resizeTable();
+    // 手機轉向時視窗尺寸會晚一點才定下來，稍後再排一次
+    clearTimeout(window._resizeLater);
+    window._resizeLater = setTimeout(resizeTable, 300);
+});
 window.addEventListener('load', resizeTable);
 document.addEventListener('DOMContentLoaded', resizeTable);
 setTimeout(resizeTable, 100);

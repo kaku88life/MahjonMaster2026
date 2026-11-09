@@ -844,7 +844,8 @@ const MahjongGame = (() => {
                 stack.onclick = (e) => {
                     e.stopPropagation();
                     if (state.userCanDraw) {
-                        if (stackIdx === state.wallHeadPtr) {
+                        // 手機橫向牌墩太小點不準，點哪一墩都從牌頭摸
+                        if (stackIdx === state.wallHeadPtr || isCompactLayout()) {
                             wallClickDraw();
                         } else {
                             showToast('摸牌要從<strong>亮黃色</strong>那一墩拿：牌頭沿順時針方向前進', 1800);
@@ -876,7 +877,9 @@ const MahjongGame = (() => {
         updateTurnIndicator(0);
         startTurnTimer(); // Start thinking timer
         renderWall();
-        updateInfoPanel('輪到您：點亮黃色的牌墩摸牌');
+        updateInfoPanel(isCompactLayout()
+            ? '輪到您：點牌桌摸牌'
+            : '輪到您：點亮黃色的牌墩摸牌');
         // 教學模式前幾手提示怎麼摸牌，之後就不再干擾
         state.drawHints = (state.drawHints || 0) + 1;
         if (state.tutorialMode && state.drawHints <= 3) {
@@ -890,6 +893,16 @@ const MahjongGame = (() => {
         renderWall();
         drawTileForPlayer(0);
     }
+
+    function isCompactLayout() {
+        return document.body.classList.contains('compact-landscape');
+    }
+
+    // 手機橫向：點牌桌任何位置都算摸牌（從牌頭）
+    document.addEventListener('click', (e) => {
+        if (!isCompactLayout() || !state.userCanDraw) return;
+        if (e.target.closest && e.target.closest('.mahjong-table-container')) wallClickDraw();
+    });
 
     // --- Drawing (流局/臭莊) ---
     function handleDraw() {
